@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-
+import mapTexture from './assets/map.png';
 const App = () => {
   useEffect(() => {
     // Create the scene
@@ -28,6 +28,20 @@ const App = () => {
     planeMesh.rotateX(-Math.PI / 2);
     scene.add(planeMesh);
 
+    const textureLoader = new THREE.TextureLoader();
+    const gridTexture = textureLoader.load(mapTexture)
+
+    const gridMaterial = new THREE.MeshBasicMaterial({
+      map: gridTexture, // Apply the loaded texture
+      side: THREE.DoubleSide,
+      transparent: true, // If you want transparency on the grid
+    });
+    
+    const gridGeometry = new THREE.PlaneGeometry(16, 16);
+    const gridMesh = new THREE.Mesh(gridGeometry, gridMaterial);
+    gridMesh.rotateX(-Math.PI / 2); // Rotate the grid to match the plane
+    gridMesh.position.y = -0.01;
+    scene.add(gridMesh);
     // Create a grid helper
     const grid = new THREE.GridHelper(16, 16);
     scene.add(grid);
