@@ -3,10 +3,40 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import mapTexture from './assets/map.png';
 import soil from './assets/soil_texture5.jpg';
+import daylight from './assets/daylight.png';
+import SimpleOverlay from './SimpleOverlay';
 const App = () => {
+  
   useEffect(() => {
     // Create the scene
     const scene = new THREE.Scene();
+    
+    function setBackgroundImage(imagePath) {
+      // Create a texture loader
+      const backgroundLoader = new THREE.TextureLoader();
+      
+      // Load the texture from your assets folder
+      backgroundLoader.load(
+        // Path to your image in the assets folder
+        imagePath, 
+        
+        // onLoad callback - when the image has loaded successfully
+        function(texture) {
+          // Set the texture as the scene background
+          scene.background = texture;
+        },
+        
+        // onProgress callback - optional
+        undefined,
+        
+        // onError callback - if the load fails
+        function(err) {
+          console.error('Error loading background texture:', err);
+        }
+      );
+    }
+    setBackgroundImage(daylight);
+
 
     // Create the camera
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -37,7 +67,7 @@ const App = () => {
     soilTexture.wrapT = THREE.RepeatWrapping;
     soilTexture.repeat.set(4, 4);
     
-    const soilMaterial = new THREE.MeshBasicMaterial({
+    const soilMaterial = new THREE.MeshPhongMaterial({
       map: soilTexture,
       color: 0x755c48
     });
@@ -46,6 +76,7 @@ const App = () => {
     // Position the soil box beneath the grid
     soilMesh.position.y = -1.03; // Just 1 unit below the grid
     scene.add(soilMesh);
+    soilMesh.castShadow = false;
     
     // Add ambient light so we can see the soil texture
     const ambientLight = new THREE.AmbientLight(0xffffff, 2);
@@ -76,7 +107,7 @@ const App = () => {
 
     
 
-    const gridMaterial = new THREE.MeshBasicMaterial({
+    const gridMaterial = new THREE.MeshPhongMaterial({
       map: gridTexture, // Apply the loaded texture
       side: THREE.DoubleSide,
       transparent: true, // If you want transparency on the grid
@@ -130,13 +161,18 @@ const App = () => {
             // Create a small line mesh to represent wind
             const windGeometry = new THREE.CylinderGeometry(0.02, 0.02, 0.6, 4);
             const windMaterial = new THREE.MeshBasicMaterial({
-              color: 0xFFFFFF, // Light blue
+              color: 0xFFFFFF,
               transparent: true,
-              opacity: 0.4 + Math.random() * 0.3, // Varying opacity
+              opacity: 0.4 + Math.random() * 0.3,
+              emissive: 0xCCCCCC,
+              emissiveIntensity: 0.3
             });
             
-            const windMesh = new THREE.Mesh(windGeometry, windMaterial);
             
+            const windMesh = new THREE.Mesh(windGeometry, windMaterial);
+            windMesh.renderOrder = 10;
+            windMesh.castShadow = false;
+            windMesh.receiveShadow = false;
             // Position slightly above the grid with random offset within the cell
             windMesh.position.set(
               x - 7.5 + (Math.random() * 0.8 - 0.4), // Center with slight randomness
@@ -234,10 +270,12 @@ const App = () => {
     
     
     // Create cloud material (semi-transparent white)
-    const cloudMaterial = new THREE.MeshStandardMaterial({
+    const cloudMaterial = new THREE.MeshPhongMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.9,
+      // Make it slightly emissive to ensure visibility
+      emissive: 0x333333
     });
     const cloudContainer = new THREE.Group();
     scene.add(cloudContainer);
@@ -250,7 +288,8 @@ const App = () => {
           // Create a cloud box for this position
           const cloudGeometry = new THREE.BoxGeometry(1, 0.3, 1);
           const cloudMesh = new THREE.Mesh(cloudGeometry, cloudMaterial);
-          
+          cloudMesh.castShadow = true;
+          cloudMesh.receiveShadow = false;
           // Position the cloud above the grid
           cloudMesh.position.set(
             x - 7.5, // Center the clouds over the grid
@@ -283,9 +322,265 @@ const App = () => {
     /*****************************************
      * CLOUD LAYER IMPLEMENTATION - END
      *****************************************/
-    // First, enable shadow mapping in the renderer
-    // Enable shadows in the renderer
-    // First clear any existing directional lights
+    /*****************************************
+ * RAINFALL IMPLEMENTATION - START
+ *****************************************/
+// Create an array to store all rain drops
+const raindrops = [];
+
+// Define a 16x16 array to determine which cloud tiles have rainfall
+// true = raining, false = not raining
+const rainfallGrid = [
+  /* 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 */
+    [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 0
+    [false,false,false,false,false,false, true , true ,false,false,false,false,false,false,false,false], // 1
+    [false,false,false,false,false, true , true , true , true ,false,false,false,false,false,false,false], // 2
+    [false,false,false,false,false, true , true , true , true ,false,false,false,false,false,false,false], // 3
+    [false,false,false,false,false,false, true , true ,false,false,false,false,false,false,false,false], // 4
+    [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 5
+    [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 6
+    [false,false,false,false,false,false,false,false,false, true , true ,false,false,false,false,false], // 7
+    [false,false,false,false,false,false,false,false, true , true , true , true ,false,false,false,false], // 8
+    [false,false,false,false,false,false,false,false, true , true , true , true ,false,false,false,false], // 9
+    [false,false,false,false,false,false,false,false,false, true , true ,false,false,false,false,false], // 10
+    [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 11
+    [false,false,false, true , true ,false,false,false,false,false,false,false,false,false,false,false], // 12
+    [false,false, true , true , true , true ,false,false,false,false,false,false,false,false,false,false], // 13
+    [false,false, true , true , true , true ,false,false,false,false,false,false,false,false,false,false], // 14
+    [false,false,false, true , true ,false,false,false,false,false,false,false,false,false,false,false], // 15
+];
+
+// Create a rain material (semi-transparent blue)
+const rainMaterial = new THREE.MeshBasicMaterial({
+  color: 0x9db3ff,
+  transparent: true,
+  opacity: 0.6
+});
+
+// Create a raindrop geometry (thin elongated box)
+const rainGeometry = new THREE.BoxGeometry(0.05, 0.3, 0.05);
+
+// Create rain container
+const rainContainer = new THREE.Group();
+scene.add(rainContainer);
+
+// Configure rain settings
+const rainConfig = {
+  maxRaindrops: 500,      // Maximum number of raindrops
+  rainSpeed: 0.01,         // Base speed of raindrops
+  rainVariance: 0.05,     // Speed variance
+  spawnRate: 5,           // How many raindrops to spawn each frame
+  minHeight: 0,           // Minimum height (ground level)
+  maxHeight: 5            // Maximum height (cloud level)
+};
+
+// Function to create a new raindrop
+function createRaindrop() {
+  // Find a random position where there's rainfall according to the rainfallGrid
+  let validPositions = [];
+  
+  for (let x = 0; x < 16; x++) {
+    for (let z = 0; z < 16; z++) {
+      // Check if this position has both a cloud and is designated as a rainfall position
+      if (cloudGrid[x][z] && rainfallGrid[x][z]) {
+        validPositions.push({x, z});
+      }
+    }
+  }
+  
+  // If no valid positions, return
+  if (validPositions.length === 0) return null;
+  
+  // Select a random position
+  const randomPos = validPositions[Math.floor(Math.random() * validPositions.length)];
+  
+  // Create a raindrop mesh
+  const raindrop = new THREE.Mesh(rainGeometry, rainMaterial);
+  
+  // Position the raindrop below the cloud with some randomness
+  raindrop.position.set(
+    randomPos.x - 7.5 + (Math.random() * 0.8 - 0.4), // Add some random offset
+    rainConfig.maxHeight, // Start at cloud level
+    randomPos.z - 7.5 + (Math.random() * 0.8 - 0.4)  // Add some random offset
+  );
+  
+  // Add individual speed property
+  raindrop.speed = rainConfig.rainSpeed + (Math.random() * rainConfig.rainVariance);
+  
+  // Add the raindrop to the scene and array
+  rainContainer.add(raindrop);
+  raindrops.push(raindrop);
+  
+  return raindrop;
+}
+
+// Function to animate rainfall
+function animateRain() {
+  // Add new raindrops based on spawn rate
+  for (let i = 0; i < rainConfig.spawnRate; i++) {
+    // Only create new drops if below the maximum
+    if (raindrops.length < rainConfig.maxRaindrops) {
+      createRaindrop();
+    }
+  }
+  
+  // Update existing raindrops
+  for (let i = raindrops.length - 1; i >= 0; i--) {
+    const drop = raindrops[i];
+    
+    // Move the raindrop down
+    drop.position.y -= drop.speed;
+    
+    // If the raindrop reaches the ground, remove it
+    if (drop.position.y <= rainConfig.minHeight) {
+      rainContainer.remove(drop);
+      raindrops.splice(i, 1);
+    }
+  }
+}
+
+
+
+// You can add other event listeners here as needed
+// For example: document.addEventListener('keydown', event => {
+//   if (event.key === 'r') rainConfig.spawnRate = (rainConfig.spawnRate === 5) ? 10 : 5;
+// });
+/*****************************************
+ * RAINFALL IMPLEMENTATION - END
+ *****************************************/
+/*****************************************
+ * COLOR INTENSITY LAYER IMPLEMENTATION 
+ *****************************************/
+
+
+const intensityGrid = [
+  [10.1, 10.2, 10.1, 10.3, 10.2, 10.1, 10.4, 10.2, 10.3, 10.1, 10.2, 10.3, 10.4, 10.2, 10.3, 10.1],
+  [10.2, 10.3, 10.4, 10.2, 10.3, 10.4, 10.2, 10.3, 10.4, 10.2, 10.3, 10.4, 10.2, 10.3, 10.4, 10.2],
+  [10.3, 10.4, 10.5, 10.3, 10.4, 10.5, 10.3, 10.4, 10.5, 10.3, 10.4, 10.5, 10.3, 10.4, 10.5, 10.3],
+  [10.4, 10.5, 10.6, 10.4, 10.5, 10.6, 10.4, 10.5, 10.6, 10.4, 10.5, 10.6, 10.4, 10.5, 10.6, 10.4],
+  [10.5, 10.6, 10.7, 10.5, 10.6, 10.7, 10.5, 10.6, 10.7, 10.5, 10.6, 10.7, 10.5, 10.6, 10.7, 10.5],
+  [10.6, 10.7, 10.8, 10.6, 10.7, 10.8, 10.6, 11.0, 10.8, 10.6, 10.7, 10.8, 10.6, 10.7, 10.8, 10.6],
+  [10.7, 10.8, 10.9, 10.7, 10.8, 10.9, 10.7, 10.8, 10.9, 10.7, 10.8, 10.9, 10.7, 10.8, 10.9, 10.7],
+  [10.8, 10.9, 11.0, 10.8, 10.9, 11.0, 10.8, 10.9, 11.0, 10.8, 10.9, 11.0, 10.8, 10.9, 11.0, 10.8],
+  [10.9, 11.0, 11.1, 10.9, 11.0, 11.1, 10.9, 11.0, 11.1, 10.9, 11.0, 11.1, 10.9, 11.0, 11.1, 10.9],
+  [11.0, 11.1, 11.2, 11.0, 11.1, 11.2, 11.0, 11.1, 11.2, 11.0, 11.1, 11.2, 11.0, 11.1, 11.2, 11.0],
+  [11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1],
+  [11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2],
+  [11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3],
+  [11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4],
+  [11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 12.2, 11.5],
+  [11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6],
+];
+
+
+const colorGridContainer = new THREE.Group();
+scene.add(colorGridContainer);
+
+
+const redColor = new THREE.Color(0xff0000);
+const greenColor = new THREE.Color(0x00ff00);
+
+// Function to find the min and max values in the grid
+function findMinMaxValues(grid) {
+  let min = Infinity;
+  let max = -Infinity;
+  
+  for (let x = 0; x < 16; x++) {
+    for (let z = 0; z < 16; z++) {
+      const value = grid[x][z];
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+  }
+  
+  return { min, max };
+}
+
+// Find the value range
+let { min, max } = findMinMaxValues(intensityGrid);
+let range = max - min;
+
+// Create a function to normalize values and map them to colors
+function getColorForValue(value) {
+  // Normalize the value to range [0,1]
+  const normalizedValue = (value - min) / range;
+  
+  // Create a color by lerping between yellow and green
+  const color = new THREE.Color();
+  color.lerpColors(redColor, greenColor, normalizedValue);
+  
+  return color;
+}
+
+// Create color tiles for each grid position
+function createColorGrid() {
+  // Clear any existing tiles
+  while (colorGridContainer.children.length > 0) {
+    colorGridContainer.remove(colorGridContainer.children[0]);
+  }
+  
+  // Create a tile for each grid position
+  for (let x = 0; x < 16; x++) {
+    for (let z = 0; z < 16; z++) {
+      const value = intensityGrid[x][z];
+      const color = getColorForValue(value);
+      
+      // Create a plane geometry for this tile
+      const tileGeometry = new THREE.PlaneGeometry(1, 1);
+      const tileMaterial = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide
+      });
+      
+      const tile = new THREE.Mesh(tileGeometry, tileMaterial);
+      tile.renderOrder = 10;
+      // Position the tile at grid coordinates with slight offset above ground
+      tile.position.set(
+        x - 7.5, // Center the grid
+        0.05,    // Just above the ground
+        z - 7.5  // Center the grid
+      );
+      
+      // Rotate to be flat/horizontal
+      tile.rotation.x = -Math.PI / 2;
+      
+      // Add to container
+      colorGridContainer.add(tile);
+    }
+  }
+}
+
+// Create the color grid
+createColorGrid();
+
+// Optional: Function to update the color grid if data changes
+function updateColorGrid(newData) {
+  // Update the data grid
+  for (let x = 0; x < 16; x++) {
+    for (let z = 0; z < 16; z++) {
+      intensityGrid[x][z] = newData[x][z];
+    }
+  }
+  
+  // Find new min/max values
+  const { min: newMin, max: newMax } = findMinMaxValues(intensityGrid);
+  min = newMin;
+  max = newMax;
+  range = max - min;
+  
+  // Update colors for all tiles
+  colorGridContainer.children.forEach((tile, index) => {
+    const x = Math.floor(index / 16);
+    const z = index % 16;
+    const value = intensityGrid[x][z];
+    const color = getColorForValue(value);
+    
+    tile.material.color = color;
+  });
+}
+ 
 scene.children.forEach(child => {
   if (child instanceof THREE.DirectionalLight) {
     scene.remove(child);
@@ -307,16 +602,16 @@ directionalLight1.position.set(0, 15, 0);
 directionalLight1.castShadow = true;
 
 // Set up shadow parameters with GENEROUS bounds
-directionalLight1.shadow.mapSize.width = 4096; // Try larger sizes for better quality
-directionalLight1.shadow.mapSize.height = 4096;
-directionalLight1.shadow.camera.near = 0.1;
-directionalLight1.shadow.camera.far = 50;
-directionalLight1.shadow.camera.left = -15;
-directionalLight1.shadow.camera.right = 15;
-directionalLight1.shadow.camera.top = 15;
-directionalLight1.shadow.camera.bottom = -15;
-directionalLight1.shadow.bias = -0.001;
-
+// More realistic shadow settings with better performance balance
+directionalLight1.shadow.mapSize.width = 2048; // Good balance between quality and performance
+directionalLight1.shadow.mapSize.height = 2048;
+directionalLight1.shadow.camera.near = 1; // More realistic near plane for outdoor scene
+directionalLight1.shadow.camera.far = 20; // Only need to see shadows within scene bounds
+directionalLight1.shadow.camera.left = -8; // Tighter frustum for sharper shadows
+directionalLight1.shadow.camera.right = 8;
+directionalLight1.shadow.camera.top = 8;
+directionalLight1.shadow.camera.bottom = -8;
+directionalLight1.shadow.bias = -0.0005; // Subtle bias to prevent shadow acne
 // Critical: Target and update matrices
 directionalLight1.target.position.set(0, 0, 0);
 scene.add(directionalLight1.target);
@@ -329,104 +624,27 @@ directionalLight1.shadow.camera.updateProjectionMatrix();
 
 // 3. ENSURE MATERIALS ARE COMPATIBLE WITH SHADOWS
 // For each cloud
-cloudMeshes.forEach(cloud => {
-  // Ensure castShadow is set
-  cloud.castShadow = true;
-  cloud.receiveShadow = false;
 
-  // FORCE a new material that works with shadows
-  const newMaterial = new THREE.MeshPhongMaterial({ 
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.9,
-    // Make it slightly emissive to ensure visibility
-    emissive: 0x333333
-  });
-  
-  // Apply the new material
-  cloud.material = newMaterial;
-  
-  // Log to confirm shadows are enabled
-  console.log("Cloud castShadow:", cloud.castShadow);
-});
 
-// 4. ENSURE RECEIVING SURFACES HAVE PROPER MATERIALS
-// For the ground mesh
+
 gridMesh.receiveShadow = true;
 gridMesh.castShadow = false;
 
-// If gridMesh is using a BasicMaterial, it won't show shadows
-if (gridMesh.material.type === 'MeshBasicMaterial') {
-  // Save current texture if there is one
-  const currentMap = gridMesh.material.map;
-  
-  // Create new material that can receive shadows
-  const newMaterial = new THREE.MeshPhongMaterial({
-    map: currentMap,
-    side: THREE.DoubleSide,
-    // More opaque to clearly show shadows
-    transparent: true,
-    opacity: 1.0
-  });
-  
-  // Apply new material
-  gridMesh.material = newMaterial;
-}
 
-// Do the same for soil mesh
-soilMesh.receiveShadow = true;
-soilMesh.castShadow = false;
 
-if (soilMesh.material.type === 'MeshBasicMaterial') {
-  const currentMap = soilMesh.material.map;
-  const newMaterial = new THREE.MeshPhongMaterial({
-    map: currentMap,
-    side: THREE.DoubleSide
-  });
-  soilMesh.material = newMaterial;
-}
 
-// 5. ADD A SIMPLE TEST OBJECT TO VERIFY SHADOWS WORK AT ALL
-// Create a simple sphere that will cast a shadow
-const testSphere = new THREE.Mesh(
-  new THREE.SphereGeometry(1, 32, 32),
-  new THREE.MeshPhongMaterial({ color: 0xff0000 })
-);
-testSphere.position.set(0, 5, 0); // Position above the grid
-testSphere.castShadow = true;
-testSphere.receiveShadow = false;
-scene.add(testSphere);
 
-// 6. VISUALIZATION HELPERS
-// Show the shadow camera frustum
-const cameraHelper = new THREE.CameraHelper(directionalLight1.shadow.camera);
-scene.add(cameraHelper);
 
-// Show a line representing the light direction
-const directionHelper = new THREE.ArrowHelper(
-  new THREE.Vector3(0, -1, 0), // Direction vector pointing down
-  directionalLight1.position,   // Start position
-  10,                         // Length
-  0xff0000,                   // Color (red)
-  1,                          // Arrow head length
-  0.5                         // Arrow head width
-);
-scene.add(directionHelper);
 
-// 7. LOG SHADOW PROPERTIES FOR DEBUGGING
-console.log("Renderer shadowMap enabled:", renderer.shadowMap.enabled);
-console.log("Light castShadow:", directionalLight1.castShadow);
-console.log("Ground receiveShadow:", gridMesh.receiveShadow);
-console.log("Shadow camera matrix:", directionalLight1.shadow.camera.matrix);
-console.log("Shadow map size:", directionalLight1.shadow.mapSize);
+
 
 // 8. FORCE A RENDER UPDATE
 // This ensures all changes take effect
 setTimeout(() => {
-  cameraHelper.update();
-  directionalLight1.updateMatrixWorld(true);
+  
   renderer.render(scene, camera);
 }, 200);
+
 
     // Create a highlight mesh (will change color on mouse hover)
     const highlightMesh = new THREE.Mesh(
@@ -490,6 +708,7 @@ setTimeout(() => {
        /*****************************************
         * CLOUD ANIMATION CALL - END
         *****************************************/
+       animateRain();
       objects.forEach((object) => {
         object.rotation.x = time / 1000;
         object.rotation.z = time / 1000;
@@ -514,7 +733,12 @@ setTimeout(() => {
     };
   }, []);
 
-  return <div />;
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
+      {/* SimpleOverlay will be positioned on top of your canvas */}
+      <SimpleOverlay />
+    </div>
+  );
 };
 
 export default App;
