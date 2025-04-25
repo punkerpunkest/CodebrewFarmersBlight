@@ -42,46 +42,93 @@ async function getWeather(lat, lon) {
   };
 }
 async function getCropYields(coords, nutrient) {
-  const crops = [];
-  const yields = [];
+  // Create an array to hold all the promises
+  const allPromises = [];
 
+  // Flatten the nested array - we need to know which y,x each result belongs to
   for (let y = 0; y < coords.length; y++) {
-    const curCrops = [];
-    const curYields = [];
-
-    for (let x = 0; x < coords[0].length; x++) {
-      const weatherData = await getWeather(coords[y][x][0], coords[y][x][1]);
-      const modelInput = {
-        "humidity": weatherData['humidity'],
-        "temperature": weatherData['temp'],
-        "nutrient": nutrient
-      };
-
-      const action = async () => {
-        const response = await fetch('https://d9fb-43-245-155-23.ngrok-free.app/predict_yield', {
-          method: 'POST',
-          body: JSON.stringify(modelInput),
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-
-        const prediction = await response.json();
-        
-        curCrops.push(prediction['yields'][0][0]);
-        curYields.push(prediction['yields'][0][1]);
-      };
-
-      await action();
+    for (let x = 0; x < coords[y].length; x++) {
+      // Create a promise for each coordinate
+      const promise = (async () => {
+        try {
+          const lat = coords[y][x][0];
+          const lon = coords[y][x][1];
+          
+          const weatherData = await getWeather(lat, lon);
+          
+          const modelInput = {
+            "humidity": weatherData.humidity,
+            "temperature": weatherData.temp,
+            "nutrient": nutrient
+          };
+          
+          const response = await fetch('https://6903-43-245-155-23.ngrok-free.app/predict_yield', {
+            method: 'POST',
+            body: JSON.stringify(modelInput),
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          const prediction = await response.json();
+          
+          return {
+            y, x,
+            cropName: prediction.yields[0][0],
+            yieldValue: prediction.yields[0][1]
+          };
+        } catch (error) {
+          console.error(`Error processing coords [${coords[y][x]}]:`, error);
+          return {
+            y, x,
+            cropName: "Error",
+            yieldValue: 0
+          };
+        }
+      })();
+      
+      allPromises.push(promise);
     }
-
-    crops.push(curCrops);
-    yields.push(curYields);
   }
-
+  
+  // Execute all promises in parallel
+  const results = await Promise.all(allPromises);
+  
+  // Initialize result arrays
+  const crops = Array(coords.length).fill().map(() => []);
+  const yields = Array(coords.length).fill().map(() => []);
+  
+  // Populate results back into the original structure
+  results.forEach(result => {
+    if (!crops[result.y]) crops[result.y] = [];
+    if (!yields[result.y]) yields[result.y] = [];
+    
+    crops[result.y][result.x] = result.cropName;
+    yields[result.y][result.x] = result.yieldValue;
+  });
+  
   return { crops, yields };
 }
 const App = () => {
+  const Coordinates = [
+    [[3, 10], [6, 8], [4, 4], [9, 10], [2, 0], [7, 6], [5, 3], [8, 1], [6, 6], [3, 2], [9, 1], [1, 9], [0, 10], [10, 5], [7, 0], [4, 7]],
+    [[1, 8], [2, 10], [5, 5], [0, 0], [6, 2], [8, 4], [3, 3], [7, 9], [10, 10], [9, 6], [1, 1], [5, 2], [6, 9], [4, 0], [0, 3], [2, 5]],
+    [[10, 3], [3, 6], [4, 1], [2, 7], [0, 9], [1, 5], [9, 8], [8, 2], [6, 0], [5, 7], [7, 1], [2, 4], [3, 9], [10, 0], [0, 2], [1, 6]],
+    [[6, 7], [7, 4], [8, 5], [1, 2], [5, 10], [2, 6], [3, 0], [0, 8], [9, 9], [4, 10], [10, 1], [6, 1], [8, 6], [3, 7], [2, 3], [7, 8]],
+    [[5, 9], [0, 4], [10, 9], [9, 0], [4, 8], [3, 5], [6, 5], [2, 1], [7, 3], [1, 0], [8, 8], [0, 5], [5, 4], [10, 6], [6, 3], [9, 5]],
+    [[2, 2], [1, 3], [4, 6], [3, 4], [8, 3], [7, 10], [5, 6], [0, 6], [10, 2], [2, 9], [6, 4], [4, 5], [1, 10], [9, 7], [7, 6], [8, 9]],
+    [[3, 1], [5, 1], [7, 7], [6, 10], [1, 4], [4, 3], [0, 7], [2, 8], [9, 3], [10, 8], [8, 7], [3, 8], [5, 8], [6, 1], [7, 5], [0, 1]],
+    [[10, 10], [2, 0], [6, 7], [1, 7], [9, 2], [8, 10], [3, 2], [4, 2], [7, 2], [0, 9], [2, 6], [5, 0], [6, 0], [10, 7], [8, 0], [1, 1]],
+    [[0, 0], [7, 9], [4, 10], [5, 3], [6, 9], [2, 3], [1, 9], [3, 9], [10, 4], [9, 1], [8, 1], [4, 9], [0, 8], [7, 10], [5, 5], [3, 3]],
+    [[1, 6], [6, 6], [9, 10], [2, 10], [3, 10], [10, 5], [7, 4], [0, 2], [8, 4], [5, 2], [4, 4], [2, 2], [6, 2], [3, 1], [10, 6], [9, 4]],
+    [[8, 5], [1, 5], [0, 3], [2, 7], [7, 7], [6, 8], [3, 0], [10, 3], [9, 8], [5, 4], [4, 6], [8, 2], [1, 4], [0, 1], [2, 9], [6, 10]],
+    [[5, 6], [7, 6], [3, 5], [9, 5], [2, 1], [1, 0], [10, 2], [8, 6], [4, 7], [0, 5], [6, 1], [3, 7], [9, 3], [7, 2], [5, 8], [1, 2]],
+    [[2, 4], [0, 6], [6, 3], [10, 8], [8, 7], [3, 6], [7, 1], [4, 1], [5, 9], [1, 7], [9, 0], [2, 5], [0, 7], [6, 9], [8, 9], [10, 9]],
+    [[9, 2], [4, 5], [5, 1], [3, 8], [2, 8], [6, 5], [7, 5], [1, 6], [0, 10], [10, 0], [8, 8], [5, 7], [4, 8], [7, 0], [3, 3], [9, 6]],
+    [[6, 4], [1, 3], [2, 6], [0, 4], [5, 5], [3, 4], [10, 10], [9, 9], [7, 8], [6, 0], [8, 0], [2, 0], [1, 1], [4, 2], [0, 0], [10, 1]],
+    [[3, 2], [5, 2], [8, 3], [9, 7], [6, 6], [0, 9], [4, 3], [1, 8], [10, 7], [2, 10], [7, 3], [3, 9], [9, 1], [8, 4], [5, 0], [6, 8]]
+  ];
+  
   const [weatherData, setWeatherData] = useState({
     temp: 0,
     humidity: 0,
@@ -114,20 +161,70 @@ const App = () => {
     const fetchYieldData = async () => {
       try {
         // Example coordinates grid - replace with actual coordinates
-        const coords = [
-          [[51.5074, -0.1278]], // Simple 1x1 grid with London coordinates
-          // Add more coordinates as needed
-        ];
+        const coords = [Coordinates.flat()];
         const nutrientLevel = "Protein"; // Example nutrient level
         
         const data = await getCropYields(coords, nutrientLevel);
-        setYieldData(data);
+        console.log("Original data:", JSON.stringify(data));
+        
+        // Get the total number of crop types we have (assuming equal distribution)
+        const totalCrops = data.crops[0].length;
+        const coordsCount = coords.length;
+       
+        
+        // Restructure the crops array
+      // Restructure the crops array
+      // Restructure the crops array - first get chunks of 3
+       // Get individual crops without grouping by 3
+        const cropItems = data.crops[0]; // Get the flat array of crops
+
+        // Group every 16 individual crops into a higher-level array
+        const transformedCrops = [];
+        for (let i = 0; i < cropItems.length; i += 16) {
+          transformedCrops.push(cropItems.slice(i, i + 16));
+        }
+
+        // Get individual yields without grouping by 3
+        const yieldItems = data.yields[0]; // Get the flat array of yields
+
+        // Group every 16 individual yields into a higher-level array
+        const transformedYields = [];
+        for (let i = 0; i < yieldItems.length; i += 16) {
+          transformedYields.push(yieldItems.slice(i, i + 16));
+        }
+
+        console.log("Crop data:", transformedCrops);
+        console.log("Yield data:", transformedYields);
+        if (transformedCrops.length > 0) {
+          // Replace the default values in bestPlantGrid with the transformed crops
+          for (let i = 0; i < transformedCrops.length && i < bestPlantGrid.length; i++) {
+            for (let j = 0; j < transformedCrops[i].length && j < bestPlantGrid[i].length; j++) {
+              bestPlantGrid[i][j] = transformedCrops[i][j];
+            }
+          }
+          console.log("Updated bestPlantGrid with transformed crops data");
+        }
+        if (transformedYields.length > 0) {
+          // Update yieldGrid with the new data
+          for (let i = 0; i < transformedYields.length && i < intensityGrid2.length; i++) {
+            for (let j = 0; j < transformedYields[i].length && j < intensityGrid2[i].length; j++) {
+              intensityGrid2[i][j] = transformedYields[i][j];
+            }
+          }
+          updateColorGrid(intensityGrid2);
+          console.log("Updated yieldGrid with transformed yields data");
+        }
+        
+        // Not setting yield data as requested
       } catch (error) {
         console.error("Error fetching yield data:", error);
       } finally {
         setIsYieldLoading(false);
       }
     };
+    
+    // Function to transform the data
+   
 
     fetchWeatherData();
     fetchYieldData();
@@ -136,23 +233,62 @@ const App = () => {
     let wheatModel;
 
     const bestPlantGrid = [
-      ["Barley", "Rice", "Sugarcane", "Sunflower", "Soybean", "Sunflower", "Sunflower", "Sunflower", "Wheat", "Potato", "Corn", "Rice", "Barley", "Potato", "Corn", "Wheat"],
-      ["Sugarcane", "Corn", "Wheat", "Soybean", "Wheat", "Rice", "Barley", "Potato", "Corn", "Rice", "Potato", "Sunflower", "Soybean", "Wheat", "Corn", "Rice"],
-      ["Rice", "Sunflower", "Corn", "Soybean", "Barley", "Corn", "Potato", "Sugarcane", "Potato", "Soybean", "Corn", "Barley", "Rice", "Sunflower", "Corn", "Rice"],
-      ["Barley", "Rice", "Sugarcane", "Corn", "Soybean", "Wheat", "Sunflower", "Rice", "Soybean", "Potato", "Wheat", "Sugarcane", "Corn", "Barley", "Sunflower", "Potato"],
-      ["Sunflower", "Rice", "Corn", "Soybean", "Barley", "Potato", "Sugarcane", "Wheat", "Corn", "Rice", "Soybean", "Sugarcane", "Barley", "Potato", "Wheat", "Sunflower"],
-      ["Wheat", "Potato", "Sugarcane", "Soybean", "Rice", "Corn", "Barley", "Sunflower", "Soybean", "Corn", "Sugarcane", "Wheat", "Rice", "Potato", "Corn", "Wheat"],
-      ["Barley", "Wheat", "Rice", "Potato", "Soybean", "Sunflower", "Corn", "Sugarcane", "Sunflower", "Corn", "Barley", "Rice", "Wheat", "Potato", "Soybean", "Corn"],
-      ["Soybean", "Sugarcane", "Corn", "Barley", "Sunflower", "Potato", "Wheat", "Rice", "Corn", "Soybean", "Sugarcane", "Potato", "Rice", "Wheat", "Barley", "Sunflower"],
-      ["Rice", "Corn", "Wheat", "Soybean", "Sunflower", "Potato", "Barley", "Sugarcane", "Corn", "Rice", "Soybean", "Barley", "Potato", "Wheat", "Corn", "Sunflower"],
-      ["Potato", "Corn", "Rice", "Soybean", "Sunflower", "Wheat", "Barley", "Sugarcane", "Corn", "Soybean", "Potato", "Wheat", "Rice", "Barley", "Sunflower", "Corn"],
-      ["Rice", "Wheat", "Barley", "Potato", "Soybean", "Corn", "Sunflower", "Sugarcane", "Barley", "Corn", "Soybean", "Wheat", "Potato", "Sunflower", "Rice", "Corn"],
-      ["Corn", "Sugarcane", "Potato", "Wheat", "Barley", "Rice", "Soybean", "Sunflower", "Corn", "Barley", "Wheat", "Potato", "Soybean", "Sugarcane", "Corn", "Rice"],
-      ["Wheat", "Soybean", "Rice", "Corn", "Sunflower", "Potato", "Barley", "Sugarcane", "Corn", "Wheat", "Barley", "Rice", "Potato", "Soybean", "Sunflower", "Corn"],
-      ["Barley", "Sunflower", "Corn", "Potato", "Rice", "Soybean", "Wheat", "Sugarcane", "Sunflower", "Potato", "Barley", "Corn", "Rice", "Soybean", "Wheat", "Corn"],
-      ["Sugarcane", "Wheat", "Barley", "Sunflower", "Corn", "Soybean", "Potato", "Rice", "Sunflower", "Corn", "Wheat", "Soybean", "Rice", "Potato", "Barley", "Sugarcane"],
-      ["Rice", "Corn", "Wheat", "Potato", "Barley", "Soybean", "Sunflower", "Sugarcane", "Corn", "Barley", "Rice", "Wheat", "Potato", "Soybean", "Sunflower", "Corn"]
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."]
     ];
+
+    const intensityGrid2 = [
+      [10.1, 10.2, 10.1, 10.3, 10.2, 10.1, 10.4, 10.2, 10.3, 10.1, 10.2, 10.3, 10.4, 10.2, 10.3, 10.1],
+      [10.2, 10.3, 10.4, 10.2, 10.3, 10.4, 10.2, 10.3, 10.4, 10.2, 10.3, 10.4, 10.2, 10.3, 10.4, 10.2],
+      [10.3, 10.4, 10.5, 10.3, 10.4, 10.5, 10.3, 10.4, 10.5, 10.3, 10.4, 10.5, 10.3, 10.4, 10.5, 10.3],
+      [10.4, 10.5, 10.6, 10.4, 10.5, 10.6, 10.4, 10.5, 10.6, 10.4, 10.5, 10.6, 10.4, 10.5, 10.6, 10.4],
+      [10.5, 10.6, 10.7, 10.5, 10.6, 10.7, 10.5, 10.6, 10.7, 10.5, 10.6, 10.7, 10.5, 10.6, 10.7, 10.5],
+      [10.6, 10.7, 10.8, 10.6, 10.7, 10.8, 10.6, 11.0, 10.8, 10.6, 10.7, 10.8, 10.6, 10.7, 10.8, 10.6],
+      [10.7, 10.8, 10.9, 10.7, 10.8, 10.9, 10.7, 10.8, 10.9, 10.7, 10.8, 10.9, 10.7, 10.8, 10.9, 10.7],
+      [10.8, 10.9, 11.0, 10.8, 10.9, 11.0, 10.8, 10.9, 11.0, 10.8, 10.9, 11.0, 10.8, 10.9, 11.0, 10.8],
+      [10.9, 11.0, 11.1, 10.9, 11.0, 11.1, 10.9, 11.0, 11.1, 10.9, 11.0, 11.1, 10.9, 11.0, 11.1, 10.9],
+      [11.0, 11.1, 11.2, 11.0, 11.1, 11.2, 11.0, 11.1, 11.2, 11.0, 11.1, 11.2, 11.0, 11.1, 11.2, 11.0],
+      [11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1],
+      [11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2],
+      [11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3],
+      [11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4],
+      [11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 12.2, 11.5],
+      [11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6],
+    ];
+    const intensityGrid = [
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
+      ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."]
+    ];
+    
+    
     
 
     
@@ -713,43 +849,7 @@ function animateRain() {
  *****************************************/
 
 
-const intensityGrid = [
-  [10.1, 10.2, 10.1, 10.3, 10.2, 10.1, 10.4, 10.2, 10.3, 10.1, 10.2, 10.3, 10.4, 10.2, 10.3, 10.1],
-  [10.2, 10.3, 10.4, 10.2, 10.3, 10.4, 10.2, 10.3, 10.4, 10.2, 10.3, 10.4, 10.2, 10.3, 10.4, 10.2],
-  [10.3, 10.4, 10.5, 10.3, 10.4, 10.5, 10.3, 10.4, 10.5, 10.3, 10.4, 10.5, 10.3, 10.4, 10.5, 10.3],
-  [10.4, 10.5, 10.6, 10.4, 10.5, 10.6, 10.4, 10.5, 10.6, 10.4, 10.5, 10.6, 10.4, 10.5, 10.6, 10.4],
-  [10.5, 10.6, 10.7, 10.5, 10.6, 10.7, 10.5, 10.6, 10.7, 10.5, 10.6, 10.7, 10.5, 10.6, 10.7, 10.5],
-  [10.6, 10.7, 10.8, 10.6, 10.7, 10.8, 10.6, 11.0, 10.8, 10.6, 10.7, 10.8, 10.6, 10.7, 10.8, 10.6],
-  [10.7, 10.8, 10.9, 10.7, 10.8, 10.9, 10.7, 10.8, 10.9, 10.7, 10.8, 10.9, 10.7, 10.8, 10.9, 10.7],
-  [10.8, 10.9, 11.0, 10.8, 10.9, 11.0, 10.8, 10.9, 11.0, 10.8, 10.9, 11.0, 10.8, 10.9, 11.0, 10.8],
-  [10.9, 11.0, 11.1, 10.9, 11.0, 11.1, 10.9, 11.0, 11.1, 10.9, 11.0, 11.1, 10.9, 11.0, 11.1, 10.9],
-  [11.0, 11.1, 11.2, 11.0, 11.1, 11.2, 11.0, 11.1, 11.2, 11.0, 11.1, 11.2, 11.0, 11.1, 11.2, 11.0],
-  [11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1],
-  [11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2],
-  [11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3],
-  [11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4],
-  [11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 12.2, 11.5],
-  [11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6],
-];
-const intensityGrid2 = [
-  [11.0, 11.1, 11.0, 11.2, 11.1, 11.0, 11.3, 11.1, 11.2, 11.0, 11.1, 11.2, 11.3, 11.1, 11.2, 11.0],
-  [11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1],
-  [11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2],
-  [11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3],
-  [11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4],
-  [11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5],
-  [11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6],
-  [11.7, 11.8, 11.9, 11.7, 11.8, 11.9, 11.7, 11.8, 11.9, 11.7, 11.8, 11.9, 11.7, 11.8, 11.9, 11.7],
-  [11.8, 11.9, 12.0, 11.8, 11.9, 12.0, 11.8, 11.9, 12.0, 11.8, 11.9, 12.0, 11.8, 11.9, 12.0, 11.8],
-  [11.9, 12.0, 12.1, 11.9, 12.0, 12.1, 11.9, 12.0, 12.1, 11.9, 12.0, 12.1, 11.9, 12.0, 12.1, 11.9],
-  [12.0, 12.1, 12.2, 12.0, 12.1, 12.2, 12.0, 12.1, 12.2, 12.0, 12.1, 12.2, 12.0, 12.1, 12.2, 12.0],
-  [12.1, 12.2, 12.3, 12.1, 12.2, 12.3, 12.1, 12.2, 12.3, 12.1, 12.2, 12.3, 12.1, 12.2, 12.3, 12.1],
-  [12.2, 12.3, 12.4, 12.2, 12.3, 12.4, 12.2, 12.3, 12.4, 12.2, 12.3, 12.4, 12.2, 12.3, 12.4, 12.2],
-  [12.3, 12.4, 12.5, 12.3, 12.4, 12.5, 12.3, 12.4, 12.5, 12.3, 12.4, 12.5, 12.3, 12.4, 12.5, 12.3],
-  [12.4, 12.5, 12.6, 12.4, 12.5, 12.6, 12.4, 12.5, 12.6, 12.4, 12.5, 12.6, 12.4, 12.5, 12.6, 12.4],
-  [12.5, 12.6, 12.7, 12.5, 12.6, 12.7, 12.5, 12.6, 12.7, 12.5, 12.6, 12.7, 12.5, 12.6, 12.7, 12.5],
-  [12.6, 12.7, 12.8, 12.6, 12.7, 12.8, 12.6, 12.7, 12.8, 12.6, 12.7, 12.8, 12.6, 12.7, 12.8, 12.6],
-];
+
 
 
 
@@ -960,19 +1060,30 @@ function updateTextSprite(x, z) {
   // Get best plant from our array
   // Use try-catch to detect any array access errors
   let bestPlant = "Unknown";
+  let currYield = "Unknown";
+  let currentCoordinate = "Unknown";
+
   try {
     bestPlant = bestPlantGrid[gridZ][gridX];
+    currentCoordinate = Coordinates[gridZ][gridX];
+    currYield = intensityGrid[gridZ][gridX];
 
   } catch (error) {
+
     console.error(`Error accessing bestPlantGrid[${gridZ}][${gridX}]:`, error);
+    console.error(`Error accessing coordinates[${gridZ}][${gridX}]:`, error);
   }
   
   // Text
-  textContext.font = 'bold 24px monospace';
+  textContext.font = 'bold 15px monospace';
   textContext.fillStyle = 'white';
   textContext.textAlign = 'center';
-  textContext.fillText(`Position: (${gridZ}, ${gridX})`, textCanvas.width / 2, 40);
+
+  textContext.fillText(`Yield: ${currYield}`, textCanvas.width / 2, 40);
   textContext.fillText(`Best Plant: ${bestPlant}`, textCanvas.width / 2, 80);
+  textContext.fillText(`Position: [${gridZ}][${gridX}], Coordinate: ${currentCoordinate}`, textCanvas.width / 2, 120);
+
+
   
   // Update texture
   textTexture.needsUpdate = true;
@@ -1376,34 +1487,7 @@ setTimeout(() => {
     >
       <div className="text-base font-bold tracking-wider">Temperature: {weatherData.temp.toFixed(1)}°C</div>
       
-{isYieldLoading ? (
-  <div>Loading yield predictions...</div>
-) : (
-  <div>
-    {/* Debugging section */}
-    
-    
-    {yieldData.yields && yieldData.yields.length > 0 ? (
-      <div className="space-y-2">
-        <h3 className="text-lg font-medium">Recommended Crops (Ranked by Yield):</h3>
-        <div className="bg-gray-800 p-4 rounded-lg">
-          {yieldData.yields.map((cropData, index) => (
-            <div key={index} className="flex justify-between items-center py-2 border-b border-gray-200 last:border-0">
-              <span className="font-medium">{cropData[0]}</span>
-              <span className="text-gray-700">
-                {typeof cropData[1] === 'number' 
-                  ? cropData[1].toFixed(2) 
-                  : cropData[1]} tons/acre
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    ) : (
-      <div>No yield data available. Raw data: {JSON.stringify(yieldData)}</div>
-    )}
-  </div>
-)}
+
     </div>
     
     <div 
