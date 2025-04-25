@@ -9,17 +9,46 @@ import wheat from './assets/wheat/scene.gltf?url';
 import island from './assets/island/scene.gltf?url';
 import croptext from './assets/croptext/result.gltf?url';
 import field from './assets/wheat_field_low_poly/scene.gltf?url';
+import panel1 from './assets/CropPanel.png';
+import panel2 from './assets/CropPanel2.png';
+
+import protein from './assets/CropProteinA.png';
+import calories from './assets/CropCalories.png';
 import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
 const App = () => {
   
   useEffect(() => {
-    // Create the scene
-    const scene = new THREE.Scene();
+    // Create the scene  const scene = new THREE.Scene();
     const gltfloader = new GLTFLoader();
     let wheatModel;
+
+    const bestPlantGrid = [
+      ["Barley", "Rice", "Sugarcane", "Sunflower", "Soybean", "Sunflower", "Sunflower", "Sunflower", "Wheat", "Potato", "Corn", "Rice", "Barley", "Potato", "Corn", "Wheat"],
+      ["Sugarcane", "Corn", "Wheat", "Soybean", "Wheat", "Rice", "Barley", "Potato", "Corn", "Rice", "Potato", "Sunflower", "Soybean", "Wheat", "Corn", "Rice"],
+      ["Rice", "Sunflower", "Corn", "Soybean", "Barley", "Corn", "Potato", "Sugarcane", "Potato", "Soybean", "Corn", "Barley", "Rice", "Sunflower", "Corn", "Rice"],
+      ["Barley", "Rice", "Sugarcane", "Corn", "Soybean", "Wheat", "Sunflower", "Rice", "Soybean", "Potato", "Wheat", "Sugarcane", "Corn", "Barley", "Sunflower", "Potato"],
+      ["Sunflower", "Rice", "Corn", "Soybean", "Barley", "Potato", "Sugarcane", "Wheat", "Corn", "Rice", "Soybean", "Sugarcane", "Barley", "Potato", "Wheat", "Sunflower"],
+      ["Wheat", "Potato", "Sugarcane", "Soybean", "Rice", "Corn", "Barley", "Sunflower", "Soybean", "Corn", "Sugarcane", "Wheat", "Rice", "Potato", "Corn", "Wheat"],
+      ["Barley", "Wheat", "Rice", "Potato", "Soybean", "Sunflower", "Corn", "Sugarcane", "Sunflower", "Corn", "Barley", "Rice", "Wheat", "Potato", "Soybean", "Corn"],
+      ["Soybean", "Sugarcane", "Corn", "Barley", "Sunflower", "Potato", "Wheat", "Rice", "Corn", "Soybean", "Sugarcane", "Potato", "Rice", "Wheat", "Barley", "Sunflower"],
+      ["Rice", "Corn", "Wheat", "Soybean", "Sunflower", "Potato", "Barley", "Sugarcane", "Corn", "Rice", "Soybean", "Barley", "Potato", "Wheat", "Corn", "Sunflower"],
+      ["Potato", "Corn", "Rice", "Soybean", "Sunflower", "Wheat", "Barley", "Sugarcane", "Corn", "Soybean", "Potato", "Wheat", "Rice", "Barley", "Sunflower", "Corn"],
+      ["Rice", "Wheat", "Barley", "Potato", "Soybean", "Corn", "Sunflower", "Sugarcane", "Barley", "Corn", "Soybean", "Wheat", "Potato", "Sunflower", "Rice", "Corn"],
+      ["Corn", "Sugarcane", "Potato", "Wheat", "Barley", "Rice", "Soybean", "Sunflower", "Corn", "Barley", "Wheat", "Potato", "Soybean", "Sugarcane", "Corn", "Rice"],
+      ["Wheat", "Soybean", "Rice", "Corn", "Sunflower", "Potato", "Barley", "Sugarcane", "Corn", "Wheat", "Barley", "Rice", "Potato", "Soybean", "Sunflower", "Corn"],
+      ["Barley", "Sunflower", "Corn", "Potato", "Rice", "Soybean", "Wheat", "Sugarcane", "Sunflower", "Potato", "Barley", "Corn", "Rice", "Soybean", "Wheat", "Corn"],
+      ["Sugarcane", "Wheat", "Barley", "Sunflower", "Corn", "Soybean", "Potato", "Rice", "Sunflower", "Corn", "Wheat", "Soybean", "Rice", "Potato", "Barley", "Sugarcane"],
+      ["Rice", "Corn", "Wheat", "Potato", "Barley", "Soybean", "Sunflower", "Sugarcane", "Corn", "Barley", "Rice", "Wheat", "Potato", "Soybean", "Sunflower", "Corn"]
+    ];
+    
     let croptextModel;
     let islandModel;
     let fieldModel;
+    let textSprite = null;
+    let textCanvas = null;
+    let textContext = null;
+    let textTexture = null;
+    let textMaterial = null;
     let isFieldHovered = false;
     let originalMaterials = new Map();
     gltfloader.load(
@@ -157,6 +186,7 @@ const App = () => {
 
     // Create the renderer
     const renderer = new THREE.WebGLRenderer();
+    createTextSprite();
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
@@ -693,7 +723,86 @@ function updateColorGrid(newData) {
     tile.material.color = color;
   });
 }
- 
+function createTextSprite() {
+  // Create canvas for the text
+  textCanvas = document.createElement('canvas');
+  textCanvas.width = 256;
+  textCanvas.height = 128;
+  textContext = textCanvas.getContext('2d');
+  
+  // Create texture from canvas
+  textTexture = new THREE.CanvasTexture(textCanvas);
+  textTexture.minFilter = THREE.LinearFilter;
+  textTexture.magFilter = THREE.LinearFilter;
+  
+  // Create material with the texture
+  textMaterial = new THREE.SpriteMaterial({
+    map: textTexture,
+    transparent: true
+  });
+  
+  // Create sprite with the material
+  textSprite = new THREE.Sprite(textMaterial);
+  textSprite.scale.set(2, 1, 1);
+  textSprite.visible = false;
+  
+  // Add to scene
+  scene.add(textSprite);
+}
+function updateTextSprite(x, z) {
+  // Clear the canvas
+  textContext.clearRect(0, 0, textCanvas.width, textCanvas.height);
+  
+  // Background
+  textContext.fillStyle = 'rgba(17, 24, 39, 0.8)';
+  textContext.fillRect(0, 0, textCanvas.width, textCanvas.height);
+  
+  // Border
+  textContext.strokeStyle = 'rgba(74, 85, 104, 0.6)';
+  textContext.lineWidth = 4;
+  textContext.strokeRect(2, 2, textCanvas.width - 4, textCanvas.height - 4);
+  
+  // Log the raw input values
+  console.log(`Raw input values: x=${x}, z=${z}`);
+  
+  // Make sure coordinates are within bounds (0-15) for our 16x16 grid
+  const gridX = Math.max(0, Math.min(15, Math.floor(x)));
+  const gridZ = Math.max(0, Math.min(15, Math.floor(z)));
+  
+  console.log(`Bounded grid coordinates: x=${gridX}, z=${gridZ}`);
+  
+  // Check for negative values
+  if (x < 0) console.warn("Warning: Negative X coordinate received");
+  if (z < 0) console.warn("Warning: Negative Z coordinate received");
+  
+  // Get best plant from our array
+  // Use try-catch to detect any array access errors
+  let bestPlant = "Unknown";
+  try {
+    bestPlant = bestPlantGrid[gridZ][gridX];
+    console.log(`Successfully retrieved plant: ${bestPlant} at [${gridZ}][${gridX}]`);
+  } catch (error) {
+    console.error(`Error accessing bestPlantGrid[${gridZ}][${gridX}]:`, error);
+  }
+  
+  // Text
+  textContext.font = 'bold 24px monospace';
+  textContext.fillStyle = 'white';
+  textContext.textAlign = 'center';
+  textContext.fillText(`Position: (${gridZ}, ${gridX})`, textCanvas.width / 2, 40);
+  textContext.fillText(`Best Plant: ${bestPlant}`, textCanvas.width / 2, 80);
+  
+  // Update texture
+  textTexture.needsUpdate = true;
+}
+function updateSpriteRotation() {
+  if (textSprite && textSprite.visible) {
+    textSprite.position.y = 1.5; // Keep it at consistent height
+    
+    // Make the text always face the camera
+    textSprite.lookAt(camera.position);
+  }
+}
 scene.children.forEach(child => {
   if (child instanceof THREE.DirectionalLight) {
     scene.remove(child);
@@ -783,9 +892,31 @@ setTimeout(() => {
       intersectsField = raycaster.intersectObject(fieldModel);
       if (intersects.length > 0) {
         const intersect = intersects[0];
+        console.log("Raw intersection point:", intersect.point);
+        
         const highlightPos = new THREE.Vector3().copy(intersect.point).floor().addScalar(0.5);
+        console.log("Highlighted position:", highlightPos);
+        
         highlightMesh.position.set(highlightPos.x, 0, highlightPos.z);
         highlightMesh.material.color.setHex(0xFFFFFF);
+        
+        // Show and position the text sprite
+        if (textSprite) {
+          textSprite.visible = true;
+          textSprite.position.set(highlightPos.x, 2, highlightPos.z); // Position above the highlighted block
+          
+          // Make sure coordinates are properly bounded for our 16x16 grid
+          const gridX = Math.max(0, Math.min(15, Math.floor(highlightPos.x + 8)));
+          const gridZ = Math.max(0, Math.min(15, Math.floor(highlightPos.z + 8)));
+          
+          console.log(`Sending to updateTextSprite: x=${gridX}, z=${gridZ}`);
+          updateTextSprite(gridX, gridZ);
+        }
+      } else {
+        // Hide the text sprite when not hovering
+        if (textSprite) {
+          textSprite.visible = false;
+        }
       }
       if (intersectsField.length > 0) {
         // Mouse is hovering over the field
@@ -861,125 +992,54 @@ setTimeout(() => {
       hideFieldInfoPanel();
       
       // Create a new panel element
-      fieldInfoPanel = document.createElement('div');
-      fieldInfoPanel.id = 'field-info-panel';
-      
-      // Apply advanced styling with CSS - centered positioning
-      fieldInfoPanel.style.position = 'fixed'; // fixed instead of absolute for viewport positioning
-      fieldInfoPanel.style.left = '50%';
-      fieldInfoPanel.style.top = '50%';
-      fieldInfoPanel.style.transform = 'translate(-50%, -50%)'; // Center the panel
-      fieldInfoPanel.style.backgroundColor = '#f8f9fa';
-      fieldInfoPanel.style.padding = '20px';
-      fieldInfoPanel.style.borderRadius = '8px';
-      fieldInfoPanel.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.15)';
-      fieldInfoPanel.style.zIndex = '1000';
-      fieldInfoPanel.style.minWidth = '300px';
-      fieldInfoPanel.style.maxWidth = '500px'; // Prevent it from being too wide
-      fieldInfoPanel.style.fontFamily = 'Arial, sans-serif';
-      fieldInfoPanel.style.border = '1px solid #e0e0e0';
-      fieldInfoPanel.style.transition = 'all 0.3s ease';
-      
-      // The rest of your styling and HTML remains the same
-      fieldInfoPanel.innerHTML = `
-        <style>
-          #field-info-panel h2 {
-            color: #2c3e50;
-            margin-top: 0;
-            font-size: 1.5rem;
-            border-bottom: 2px solid #3498db;
-            padding-bottom: 10px;
-            margin-bottom: 15px;
-          }
-          
-          #field-info-panel p {
-            color: #555;
-            line-height: 1.6;
-            margin-bottom: 20px;
-          }
-          
-          #field-info-panel .button-group {
-            display: flex;
-            gap: 10px;
-          }
-          
-          #field-info-panel button {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: background-color 0.2s;
-          }
-          
-          #field-info-panel .primary-btn {
-            background-color: #3498db;
-            color: white;
-          }
-          
-          #field-info-panel .primary-btn:hover {
-            background-color: #2980b9;
-          }
-          
-          #field-info-panel .secondary-btn {
-            background-color: #e74c3c;
-            color: white;
-          }
-          
-          #field-info-panel .secondary-btn:hover {
-            background-color: #c0392b;
-          }
-          
-          #field-info-panel .stat-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 15px;
-          }
-          
-          #field-info-panel .stat-box {
-            background: #ecf0f1;
-            padding: 10px;
-            border-radius: 5px;
-            text-align: center;
-          }
-          
-          #field-info-panel .stat-value {
-            font-size: 1.2rem;
-            font-weight: bold;
-            color: #2c3e50;
-          }
-          
-          #field-info-panel .stat-label {
-            font-size: 0.8rem;
-            color: #7f8c8d;
-            text-transform: uppercase;
-          }
-        </style>
-        
-        <h2>Optimize Field</h2>
-        
-        <div class="stat-grid">
-          <div class="stat-box">
-            <div class="stat-value">87%</div>
-            <div class="stat-label">Efficiency</div>
-          </div>
-          <div class="stat-box">
-            <div class="stat-value">12.5 ha</div>
-            <div class="stat-label">Field Size</div>
-          </div>
-        </div>
-        
-        <p>Select an optimization strategy for this field. Current resource allocation can be improved for better yield.</p>
-        
-        <div class="button-group">
-          <button class="primary-btn" id="optimize-btn">Optimize</button>
-          <button class="secondary-btn" id="close-panel-btn">Close</button>
-        </div>
-      `;
-      
-      // Add to the document
+      // Create a new panel element
+     // Create a new panel element
+// Create a new panel element
+// Create a new panel element
+// Create a new panel element
+fieldInfoPanel = document.createElement('div');
+fieldInfoPanel.id = 'field-info-panel';
+fieldInfoPanel.style.backgroundImage = `url(${panel1})`;
+fieldInfoPanel.style.backgroundSize = '100% 100%';
+fieldInfoPanel.style.backgroundPosition = 'center';
+fieldInfoPanel.style.backgroundRepeat = 'no-repeat';
+fieldInfoPanel.style.border = 'none';
+fieldInfoPanel.style.boxShadow = 'none';
+
+// Apply Tailwind classes with no border, no shadow, no rounded corners
+fieldInfoPanel.className = 'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 p-6 z-50 w-160 h-144 mt-8 overflow-hidden border-0 shadow-none rounded-none';
+
+// Add to the document
+fieldInfoPanel.innerHTML = `
+  <div class="relative h-full w-full">
+    <!-- Protein image positioned absolutely -->
+    <div class="image-button cursor-pointer transform transition-transform hover:scale-105 absolute" 
+         id="panel2-button" 
+         style="top: 42%; left: 50%; transform: translate(-50%, -50%);">
+      <img src="${protein}" alt="Protein" class="w-64 h-52 object-cover">
+    </div>
+    
+    <!-- Calories image positioned absolutely -->
+    <div class="image-button cursor-pointer transform transition-transform hover:scale-105 absolute" 
+         id="panel3-button" 
+         style="top: 70%; left: 50%; transform: translate(-50%, -50%);">
+      <img src="${calories}" alt="Calories" class="w-64 h-52 object-cover">
+    </div>
+  </div>
+`;
+
       document.body.appendChild(fieldInfoPanel);
+      document.getElementById('panel2-button').addEventListener('click', () => {
+        // Add your action for the first button
+        console.log('Panel 2 button clicked');
+        // Example: switchToPanel(2);
+      });
+      
+      document.getElementById('panel3-button').addEventListener('click', () => {
+        // Add your action for the second button
+        console.log('Panel 3 button clicked');
+        // Example: switchToPanel(3);
+      });
       
       // Add event listeners to buttons
       document.getElementById('close-panel-btn').addEventListener('click', hideFieldInfoPanel);
@@ -987,8 +1047,10 @@ setTimeout(() => {
         alert('Optimizing field...');
         // Add your optimization logic here
       });
+      
+      // Log test confirmation
+      console.log('Simple low-poly field panel displayed');
     }
-    
     // Function to hide the info panel
     function hideFieldInfoPanel() {
       const panel = document.getElementById('field-info-panel');
@@ -1014,6 +1076,7 @@ setTimeout(() => {
         * CLOUD ANIMATION CALL - END
         *****************************************/
        animateRain();
+       updateSpriteRotation();
      
       renderer.render(scene, camera);
     }
@@ -1034,10 +1097,26 @@ setTimeout(() => {
     };
   }, []);
 
+  
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
-      {/* SimpleOverlay will be positioned on top of your canvas */}
-      <SimpleOverlay />
+    <div className="relative w-full h-screen">
+      {/* Top left panel with temperature and humidity info */}
+      <div 
+        className="absolute top-4 left-4 p-5 text-white overflow-hidden w-72 h-32 flex flex-col justify-center"
+        style={{
+          background: "linear-gradient(135deg, rgba(45,55,72,0.9) 0%, rgba(17,24,39,0.95) 100%)",
+          boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1)",
+          border: "1px solid rgba(74, 85, 104, 0.3)",
+          borderRadius: "4px",
+          fontFamily: "'VT323', 'Silkscreen', monospace" /* Pixelated game-like font */
+        }}
+      >
+        <div className="text-base font-bold uppercase tracking-wider">Temperature: 70°C</div>
+        <div className="text-base font-bold uppercase tracking-wider">Humidity: 70%</div>
+      </div>
+      
+      {/* Main content area */}
+      {/* You can add your canvas or other content here */}
     </div>
   );
 };
