@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import mapTexture from './assets/map.png';
@@ -6,19 +6,131 @@ import soil from './assets/soil_texture5.jpg';
 import daylight from './assets/daylight.png';
 import SimpleOverlay from './SimpleOverlay';
 import wheat from './assets/wheat/scene.gltf?url';
+import soybean from './assets/soybean/scene.gltf?url';
 import island from './assets/island/scene.gltf?url';
 import croptext from './assets/croptext/result.gltf?url';
 import field from './assets/wheat_field_low_poly/scene.gltf?url';
 import panel1 from './assets/CropPanel.png';
 import panel2 from './assets/CropPanel2.png';
-
+import { fetchWeatherApi } from 'openmeteo';
 import protein from './assets/CropProteinA.png';
 import calories from './assets/CropCalories.png';
 import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
+async function getWeather(lat, lon) {
+  const parms = {
+    "latitude": lat,
+    "longitude": lon,
+    "daily": ["weather_code", "uv_index_max"],
+    "hourly": ["temperature_2m", "relative_humidity_2m", "weather_code", "wind_direction_120m", "wind_direction_10m", "soil_moisture_3_to_9cm"],
+    "timezone": "GMT"
+  }; 
+  const url= "https://api.open-meteo.com/v1/forecast";
+  const responses = await fetchWeatherApi(url, parms);
+  const response = responses[0];
+
+  const firstfivetemp = response.hourly().variables(0).valuesArray().slice(0, 5);
+  const firstfivehumidity = response.hourly().variables(1).valuesArray().slice(0, 5);
+  const firstfivewind10m = response.hourly().variables(4).valuesArray().slice(0, 5);
+  const firstfivewind120m = response.hourly().variables(3).valuesArray().slice(0, 5);
+  const firstfivesoilmoisture = response.hourly().variables(5).valuesArray().slice(0, 5);
+  return {
+    temp: firstfivetemp.reduce((sum, current) => sum + current, 0) / firstfivetemp.length,
+    humidity: firstfivehumidity.reduce((sum, current) => sum + current, 0) / firstfivehumidity.length,
+    wind10m: firstfivewind10m.reduce((sum, current) => sum + current, 0) / firstfivewind10m.length,
+    wind120m: firstfivewind120m.reduce((sum, current) => sum + current, 0) / firstfivewind120m.length,
+    soilmoisture: firstfivesoilmoisture.reduce((sum, current) => sum + current, 0) / firstfivesoilmoisture.length
+  };
+}
+async function getCropYields(coords, nutrient) {
+  const crops = [];
+  const yields = [];
+
+  for (let y = 0; y < coords.length; y++) {
+    const curCrops = [];
+    const curYields = [];
+
+    for (let x = 0; x < coords[0].length; x++) {
+      const weatherData = await getWeather(coords[y][x][0], coords[y][x][1]);
+      const modelInput = {
+        "humidity": weatherData['humidity'],
+        "temperature": weatherData['temp'],
+        "nutrient": nutrient
+      };
+
+      const action = async () => {
+        const response = await fetch('https://d9fb-43-245-155-23.ngrok-free.app/predict_yield', {
+          method: 'POST',
+          body: JSON.stringify(modelInput),
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const prediction = await response.json();
+        
+        curCrops.push(prediction['yields'][0][0]);
+        curYields.push(prediction['yields'][0][1]);
+      };
+
+      await action();
+    }
+
+    crops.push(curCrops);
+    yields.push(curYields);
+  }
+
+  return { crops, yields };
+}
 const App = () => {
+  const [weatherData, setWeatherData] = useState({
+    temp: 0,
+    humidity: 0,
+    wind10m: 0,
+    wind120m: 0,
+    soilmoisture: 0
+  });
+  const [yieldData, setYieldData] = useState({
+    crops: [],
+    yields: []
+  });
   
+  // State to manage loading
+  const [isLoading, setIsLoading] = useState(true);
+  const [isYieldLoading, setIsYieldLoading] = useState(true);
   useEffect(() => {
     // Create the scene  
+    const fetchWeatherData = async () => {
+      try {
+
+        const data = await getWeather(61, -0.1278); 
+        setWeatherData(data);
+      } catch (error) {
+        console.error("Error fetching weather data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    const fetchYieldData = async () => {
+      try {
+        // Example coordinates grid - replace with actual coordinates
+        const coords = [
+          [[51.5074, -0.1278]], // Simple 1x1 grid with London coordinates
+          // Add more coordinates as needed
+        ];
+        const nutrientLevel = "Protein"; // Example nutrient level
+        
+        const data = await getCropYields(coords, nutrientLevel);
+        setYieldData(data);
+      } catch (error) {
+        console.error("Error fetching yield data:", error);
+      } finally {
+        setIsYieldLoading(false);
+      }
+    };
+
+    fetchWeatherData();
+    fetchYieldData();
     const scene = new THREE.Scene();
     const gltfloader = new GLTFLoader();
     let wheatModel;
@@ -42,6 +154,10 @@ const App = () => {
       ["Rice", "Corn", "Wheat", "Potato", "Barley", "Soybean", "Sunflower", "Sugarcane", "Corn", "Barley", "Rice", "Wheat", "Potato", "Soybean", "Sunflower", "Corn"]
     ];
     
+
+    
+
+
     let croptextModel;
     let islandModel;
     let fieldModel;
@@ -615,6 +731,26 @@ const intensityGrid = [
   [11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 12.2, 11.5],
   [11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6],
 ];
+const intensityGrid2 = [
+  [11.0, 11.1, 11.0, 11.2, 11.1, 11.0, 11.3, 11.1, 11.2, 11.0, 11.1, 11.2, 11.3, 11.1, 11.2, 11.0],
+  [11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1, 11.2, 11.3, 11.1],
+  [11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2, 11.3, 11.4, 11.2],
+  [11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3, 11.4, 11.5, 11.3],
+  [11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4, 11.5, 11.6, 11.4],
+  [11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5, 11.6, 11.7, 11.5],
+  [11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6, 11.7, 11.8, 11.6],
+  [11.7, 11.8, 11.9, 11.7, 11.8, 11.9, 11.7, 11.8, 11.9, 11.7, 11.8, 11.9, 11.7, 11.8, 11.9, 11.7],
+  [11.8, 11.9, 12.0, 11.8, 11.9, 12.0, 11.8, 11.9, 12.0, 11.8, 11.9, 12.0, 11.8, 11.9, 12.0, 11.8],
+  [11.9, 12.0, 12.1, 11.9, 12.0, 12.1, 11.9, 12.0, 12.1, 11.9, 12.0, 12.1, 11.9, 12.0, 12.1, 11.9],
+  [12.0, 12.1, 12.2, 12.0, 12.1, 12.2, 12.0, 12.1, 12.2, 12.0, 12.1, 12.2, 12.0, 12.1, 12.2, 12.0],
+  [12.1, 12.2, 12.3, 12.1, 12.2, 12.3, 12.1, 12.2, 12.3, 12.1, 12.2, 12.3, 12.1, 12.2, 12.3, 12.1],
+  [12.2, 12.3, 12.4, 12.2, 12.3, 12.4, 12.2, 12.3, 12.4, 12.2, 12.3, 12.4, 12.2, 12.3, 12.4, 12.2],
+  [12.3, 12.4, 12.5, 12.3, 12.4, 12.5, 12.3, 12.4, 12.5, 12.3, 12.4, 12.5, 12.3, 12.4, 12.5, 12.3],
+  [12.4, 12.5, 12.6, 12.4, 12.5, 12.6, 12.4, 12.5, 12.6, 12.4, 12.5, 12.6, 12.4, 12.5, 12.6, 12.4],
+  [12.5, 12.6, 12.7, 12.5, 12.6, 12.7, 12.5, 12.6, 12.7, 12.5, 12.6, 12.7, 12.5, 12.6, 12.7, 12.5],
+  [12.6, 12.7, 12.8, 12.6, 12.7, 12.8, 12.6, 12.7, 12.8, 12.6, 12.7, 12.8, 12.6, 12.7, 12.8, 12.6],
+];
+
 
 
 const colorGridContainer = new THREE.Group();
@@ -700,29 +836,74 @@ function createColorGrid() {
 createColorGrid();
 
 // Optional: Function to update the color grid if data changes
+// Replace your current updateColorGrid function with this fixed version
 function updateColorGrid(newData) {
-  // Update the data grid
+  // Store current min/max from intensityGrid for comparison
+  const oldMin = min;
+  const oldMax = max;
+  const oldRange = range;
+  
+  console.log("Updating color grid with new data");
+  console.log("First value of new data:", newData[0][0]);
+  console.log("First value of current grid:", intensityGrid[0][0]);
+  
+  // Update the data grid with the new values
   for (let x = 0; x < 16; x++) {
     for (let z = 0; z < 16; z++) {
       intensityGrid[x][z] = newData[x][z];
     }
   }
   
-  // Find new min/max values
+  // Find new min/max values from the updated intensityGrid
   const { min: newMin, max: newMax } = findMinMaxValues(intensityGrid);
   min = newMin;
   max = newMax;
   range = max - min;
   
-  // Update colors for all tiles
-  colorGridContainer.children.forEach((tile, index) => {
-    const x = Math.floor(index / 16);
-    const z = index % 16;
-    const value = intensityGrid[x][z];
-    const color = getColorForValue(value);
-    
-    tile.material.color = color;
-  });
+  console.log("Color range updated:");
+  console.log("Old min/max:", oldMin, oldMax, "range:", oldRange);
+  console.log("New min/max:", min, max, "range:", range);
+
+  // Clear the color grid and rebuild it from scratch
+  // This ensures proper indexing and avoids potential ordering issues
+  while (colorGridContainer.children.length > 0) {
+    colorGridContainer.remove(colorGridContainer.children[0]);
+  }
+  
+  // Recreate the color grid with the new values
+  for (let x = 0; x < 16; x++) {
+    for (let z = 0; z < 16; z++) {
+      const value = intensityGrid[x][z];
+      const color = getColorForValue(value);
+      
+      // Create a plane geometry for this tile
+      const tileGeometry = new THREE.PlaneGeometry(1, 1);
+      const tileMaterial = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide
+      });
+      
+      const tile = new THREE.Mesh(tileGeometry, tileMaterial);
+      tile.renderOrder = 10;
+      
+      // Position the tile at grid coordinates with slight offset above ground
+      tile.position.set(
+        x - 7.5, // Center the grid
+        0.05,    // Just above the ground
+        z - 7.5  // Center the grid
+      );
+      
+      // Rotate to be flat/horizontal
+      tile.rotation.x = -Math.PI / 2;
+      
+      // Add to container
+      colorGridContainer.add(tile);
+    }
+  }
+  
+  console.log("Color grid rebuilt with", colorGridContainer.children.length, "tiles");
 }
 function createTextSprite() {
   // Create canvas for the text
@@ -764,13 +945,13 @@ function updateTextSprite(x, z) {
   textContext.strokeRect(2, 2, textCanvas.width - 4, textCanvas.height - 4);
   
   // Log the raw input values
-  console.log(`Raw input values: x=${x}, z=${z}`);
+
   
   // Make sure coordinates are within bounds (0-15) for our 16x16 grid
   const gridX = Math.max(0, Math.min(15, Math.floor(x)));
   const gridZ = Math.max(0, Math.min(15, Math.floor(z)));
   
-  console.log(`Bounded grid coordinates: x=${gridX}, z=${gridZ}`);
+
   
   // Check for negative values
   if (x < 0) console.warn("Warning: Negative X coordinate received");
@@ -781,7 +962,7 @@ function updateTextSprite(x, z) {
   let bestPlant = "Unknown";
   try {
     bestPlant = bestPlantGrid[gridZ][gridX];
-    console.log(`Successfully retrieved plant: ${bestPlant} at [${gridZ}][${gridX}]`);
+
   } catch (error) {
     console.error(`Error accessing bestPlantGrid[${gridZ}][${gridX}]:`, error);
   }
@@ -893,10 +1074,10 @@ setTimeout(() => {
       intersectsField = raycaster.intersectObject(fieldModel);
       if (intersects.length > 0) {
         const intersect = intersects[0];
-        console.log("Raw intersection point:", intersect.point);
+        
         
         const highlightPos = new THREE.Vector3().copy(intersect.point).floor().addScalar(0.5);
-        console.log("Highlighted position:", highlightPos);
+       
         
         highlightMesh.position.set(highlightPos.x, 0, highlightPos.z);
         highlightMesh.material.color.setHex(0xFFFFFF);
@@ -910,7 +1091,7 @@ setTimeout(() => {
           const gridX = Math.max(0, Math.min(15, Math.floor(highlightPos.x + 8)));
           const gridZ = Math.max(0, Math.min(15, Math.floor(highlightPos.z + 8)));
           
-          console.log(`Sending to updateTextSprite: x=${gridX}, z=${gridZ}`);
+          
           updateTextSprite(gridX, gridZ);
         }
       } else {
@@ -945,15 +1126,30 @@ setTimeout(() => {
 
     const objects = [];
     let fieldInfoPanel;
+    let plantModel = null;
    
     // Mouse click handler
     window.addEventListener('mousedown', () => {
+      if (event.target.closest('#field-info-panel')) {
+        return; // Exit early - let the button handle the click
+      }
       if (fieldModel && intersectsField && intersectsField.length > 0) {
         showFieldInfoPanel();
       } else {
         hideFieldInfoPanel();
       }
       if (intersects.length > 0) {
+    
+        // Get the grid position
+        const highlightPos1 = new THREE.Vector3().copy(intersects[0].point).floor();
+    
+        // Calculate the grid indices (from -8,-8 to 7,7 transformed to 0-15, 0-15)
+        const gridX = Math.max(0, Math.min(15, Math.floor(highlightPos1.x + 8)));
+        const gridZ = Math.max(0, Math.min(15, Math.floor(highlightPos1.z + 8)));
+        
+        // Now using the correctly named variables
+        const plantType = bestPlantGrid[gridZ][gridX];
+        console.log(`Planting ${plantType} at grid position (${gridZ}, ${gridX})`);
         if (wheatModel) {
           // Clone the wheat model
           const wheatClone = wheatModel.clone();
@@ -989,76 +1185,142 @@ setTimeout(() => {
       }
     });
     function showFieldInfoPanel() {
+      console.log('Starting showFieldInfoPanel function');
+      
+      // Disable Three.js canvas pointer events
+      const canvasElements = document.querySelectorAll('canvas');
+      canvasElements.forEach(canvas => {
+        canvas.style.pointerEvents = 'none';
+      });
+      
       // Remove existing panel if there is one
       hideFieldInfoPanel();
       
       // Create a new panel element
-      // Create a new panel element
-     // Create a new panel element
-// Create a new panel element
-// Create a new panel element
-// Create a new panel element
-fieldInfoPanel = document.createElement('div');
-fieldInfoPanel.id = 'field-info-panel';
-fieldInfoPanel.style.backgroundImage = `url(${panel1})`;
-fieldInfoPanel.style.backgroundSize = '100% 100%';
-fieldInfoPanel.style.backgroundPosition = 'center';
-fieldInfoPanel.style.backgroundRepeat = 'no-repeat';
-fieldInfoPanel.style.border = 'none';
-fieldInfoPanel.style.boxShadow = 'none';
-
-// Apply Tailwind classes with no border, no shadow, no rounded corners
-fieldInfoPanel.className = 'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 p-6 z-50 w-160 h-144 mt-8 overflow-hidden border-0 shadow-none rounded-none';
-
-// Add to the document
-fieldInfoPanel.innerHTML = `
-  <div class="relative h-full w-full">
-    <!-- Protein image positioned absolutely -->
-    <div class="image-button cursor-pointer transform transition-transform hover:scale-105 absolute" 
-         id="panel2-button" 
-         style="top: 42%; left: 50%; transform: translate(-50%, -50%);">
-      <img src="${protein}" alt="Protein" class="w-64 h-52 object-cover">
-    </div>
+      const fieldInfoPanel = document.createElement('div');
+      fieldInfoPanel.id = 'field-info-panel';
+      
+      // Apply Tailwind classes with increased z-index
+      fieldInfoPanel.className = 'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 p-6 z-50 w-160 h-144 mt-8 overflow-hidden bg-gray-800 bg-opacity-80 rounded-md shadow-lg border border-gray-700';
+      
+      // Add content to the panel
+      fieldInfoPanel.innerHTML = `
+        <div class="relative h-full w-full flex flex-col items-center">
+          <h2 class="text-white text-2xl font-bold mb-8" style="font-family: 'VT323', 'Silkscreen', monospace">Crop Optimization</h2>
     
-    <!-- Calories image positioned absolutely -->
-    <div class="image-button cursor-pointer transform transition-transform hover:scale-105 absolute" 
-         id="panel3-button" 
-         style="top: 70%; left: 50%; transform: translate(-50%, -50%);">
-      <img src="${calories}" alt="Calories" class="w-64 h-52 object-cover">
-    </div>
-  </div>
-`;
-
+          <!-- Calories button -->
+          <button 
+            id="calories-btn" 
+            class="w-64 h-20 mb-6 text-white font-bold py-4 px-6 rounded-md transform focus:outline-none hover:bg-transparent"
+            style="font-family: 'VT323', 'Silkscreen', monospace; background-color: #4B5563;" 
+          >
+            Calories (Default)
+          </button>
+    
+          <!-- Protein button -->
+          <button 
+            id="protein-btn" 
+            class="w-64 h-20 mb-6 text-white font-bold py-4 px-6 rounded-md transform focus:outline-none hover:bg-transparent"
+            style="font-family: 'VT323', 'Silkscreen', monospace; background-color: #4B5563;" 
+          >
+            Protein
+          </button>
+    
+          <!-- Oil button -->
+          <button 
+            id="water-btn" 
+            class="w-64 h-20 mb-6 text-white font-bold py-4 px-6 rounded-md transform focus:outline-none hover:bg-transparent"
+            style="font-family: 'VT323', 'Silkscreen', monospace; background-color: #4B5563;" 
+          >
+            Oil
+          </button>
+    
+          <!-- Carbohydrates button -->
+          <button 
+            id="carbs-btn" 
+            class="w-64 h-20 mb-6 text-white font-bold py-4 px-6 rounded-md transform focus:outline-none hover:bg-transparent"
+            style="font-family: 'VT323', 'Silkscreen', monospace; background-color: #4B5563;" 
+          >
+            Carbohydrates
+          </button>
+    
+          <!-- EFA button -->
+          <button 
+            id="efa-btn" 
+            class="w-64 h-20 mb-6 text-white font-bold py-4 px-6 rounded-md transform focus:outline-none hover:bg-transparent"
+            style="font-family: 'VT323', 'Silkscreen', monospace; background-color: #4B5563;" 
+          >
+            EFA
+          </button>
+        </div>
+      `;
+      
+      // Add to the document
       document.body.appendChild(fieldInfoPanel);
-      document.getElementById('panel2-button').addEventListener('click', () => {
-        // Add your action for the first button
-        console.log('Panel 2 button clicked');
-        // Example: switchToPanel(2);
-      });
+      console.log('Panel added to document body');
+    
+      // Set up event listeners for all buttons
+      const caloriesBtn = fieldInfoPanel.querySelector('#calories-btn');
+      const proteinBtn = fieldInfoPanel.querySelector('#protein-btn');
+      const waterBtn = fieldInfoPanel.querySelector('#water-btn');
+      const carbsBtn = fieldInfoPanel.querySelector('#carbs-btn');
+      const efaBtn = fieldInfoPanel.querySelector('#efa-btn');
       
-      document.getElementById('panel3-button').addEventListener('click', () => {
-        // Add your action for the second button
-        console.log('Panel 3 button clicked');
-        // Example: switchToPanel(3);
-      });
+      // Add event listeners with capture phase (true as third parameter)
+      caloriesBtn.addEventListener('click', function(e) {
+        console.log('Calories button clicked');
+        e.stopPropagation();
+        if (typeof updateColorGrid === 'function') {
+          updateColorGrid(intensityGrid1 || intensityGrid2); // Fallback to grid2 if grid1 doesn't exist
+        }
+      }, true);
       
-      // Add event listeners to buttons
-      document.getElementById('close-panel-btn').addEventListener('click', hideFieldInfoPanel);
-      document.getElementById('optimize-btn').addEventListener('click', () => {
-        alert('Optimizing field...');
-        // Add your optimization logic here
-      });
+      proteinBtn.addEventListener('click', function(e) {
+        console.log('Protein button clicked');
+        e.stopPropagation();
+        if (typeof updateColorGrid === 'function' && typeof intensityGrid2 !== 'undefined') {
+          updateColorGrid(intensityGrid2);
+        }
+        hideFieldInfoPanel();
+      }, true);
       
-      // Log test confirmation
-      console.log('Simple low-poly field panel displayed');
+      waterBtn.addEventListener('click', function(e) {
+        console.log('Oil button clicked');
+        e.stopPropagation();
+        if (typeof updateColorGrid === 'function' && typeof intensityGrid3 !== 'undefined') {
+          updateColorGrid(intensityGrid3);
+        }
+      }, true);
+      
+      carbsBtn.addEventListener('click', function(e) {
+        console.log('Carbs button clicked');
+        e.stopPropagation();
+        if (typeof updateColorGrid === 'function' && typeof intensityGrid4 !== 'undefined') {
+          updateColorGrid(intensityGrid4);
+        }
+      }, true);
+      
+      efaBtn.addEventListener('click', function(e) {
+        console.log('EFA button clicked');
+        e.stopPropagation();
+        if (typeof updateColorGrid === 'function' && typeof intensityGrid5 !== 'undefined') {
+          updateColorGrid(intensityGrid5);
+        }
+      }, true);
     }
-    // Function to hide the info panel
+    
+    // Make sure you have this function defined somewhere
     function hideFieldInfoPanel() {
-      const panel = document.getElementById('field-info-panel');
-      if (panel) {
-        document.body.removeChild(panel);
-        fieldInfoPanel = null;
+      const existingPanel = document.getElementById('field-info-panel');
+      if (existingPanel) {
+        existingPanel.remove();
       }
+      
+      // Re-enable Three.js canvas pointer events
+      const canvasElements = document.querySelectorAll('canvas');
+      canvasElements.forEach(canvas => {
+        canvas.style.pointerEvents = 'auto';
+      });
     }
     // Animation loop
     function animate(time) {
@@ -1100,25 +1362,76 @@ fieldInfoPanel.innerHTML = `
 
   
   return (
-    <div className="relative w-full h-screen">
-      {/* Top left panel with temperature and humidity info */}
-      <div 
-        className="absolute top-4 left-4 p-5 text-white overflow-hidden w-72 h-32 flex flex-col justify-center"
-        style={{
-          background: "linear-gradient(135deg, rgba(45,55,72,0.9) 0%, rgba(17,24,39,0.95) 100%)",
-          boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1)",
-          border: "1px solid rgba(74, 85, 104, 0.3)",
-          borderRadius: "4px",
-          fontFamily: "'VT323', 'Silkscreen', monospace" /* Pixelated game-like font */
-        }}
-      >
-        <div className="text-base font-bold uppercase tracking-wider">Temperature: 70°C</div>
-        <div className="text-base font-bold uppercase tracking-wider">Humidity: 70%</div>
-      </div>
+    <div className="fixed inset-0 flex justify-between p-4 z-50 pointer-events-none">
+    {/* Left panel */}
+    <div 
+      className="p-5 bg-gray-800 text-white overflow-hidden w-72 h-32 flex flex-col justify-center pointer-events-auto"
+      style={{
+        
+        boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1)",
+        border: "1px solid rgba(74, 85, 104, 0.3)",
+        borderRadius: "4px",
+        fontFamily: "'VT323', 'Silkscreen', monospace"
+      }}
+    >
+      <div className="text-base font-bold tracking-wider">Temperature: {weatherData.temp.toFixed(1)}°C</div>
       
-      {/* Main content area */}
-      {/* You can add your canvas or other content here */}
+{isYieldLoading ? (
+  <div>Loading yield predictions...</div>
+) : (
+  <div>
+    {/* Debugging section */}
+    
+    
+    {yieldData.yields && yieldData.yields.length > 0 ? (
+      <div className="space-y-2">
+        <h3 className="text-lg font-medium">Recommended Crops (Ranked by Yield):</h3>
+        <div className="bg-gray-800 p-4 rounded-lg">
+          {yieldData.yields.map((cropData, index) => (
+            <div key={index} className="flex justify-between items-center py-2 border-b border-gray-200 last:border-0">
+              <span className="font-medium">{cropData[0]}</span>
+              <span className="text-gray-700">
+                {typeof cropData[1] === 'number' 
+                  ? cropData[1].toFixed(2) 
+                  : cropData[1]} tons/acre
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : (
+      <div>No yield data available. Raw data: {JSON.stringify(yieldData)}</div>
+    )}
+  </div>
+)}
     </div>
+    
+    <div 
+  className="p-4 bg-gray-800 bg-opacity-80 rounded-md pointer-events-auto flex flex-col"
+  style={{
+    boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1)",
+    border: "1px solid rgba(74, 85, 104, 0.3)",
+    fontFamily: "'VT323', 'Silkscreen', monospace",
+    height: "40vh"
+  }}
+>
+  <div className="text-white text-center font-bold mb-2">Crop Yield</div>
+  
+  <div className="flex flex-col items-center flex-1">
+    <div className="text-white text-xs mb-1">Best</div>
+    
+    <div 
+      className="w-8 flex-1 rounded-sm" 
+      style={{ 
+        background: 'linear-gradient(to bottom, #00FF00, #FFFF00, #FF0000)',
+        minHeight: '200px' // Minimum height to ensure the gradient is visible
+      }} 
+    />
+    
+    <div className="text-white text-xs mt-1">Worst</div>
+  </div>
+</div>
+</div>
   );
 };
 

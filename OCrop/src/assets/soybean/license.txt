@@ -1,0 +1,11 @@
+Model Information:
+* title:	Soybean
+* source:	https://sketchfab.com/3d-models/soybean-0d4505aac3a44a3eb921d65e82c0922d
+* author:	Sion (https://sketchfab.com/mrSpeedle)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Soybean" (https://sketchfab.com/3d-models/soybean-0d4505aac3a44a3eb921d65e82c0922d) by Sion (https://sketchfab.com/mrSpeedle) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
