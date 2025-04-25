@@ -5,12 +5,125 @@ import mapTexture from './assets/map.png';
 import soil from './assets/soil_texture5.jpg';
 import daylight from './assets/daylight.png';
 import SimpleOverlay from './SimpleOverlay';
+import wheat from './assets/wheat/scene.gltf?url';
+import island from './assets/island/scene.gltf?url';
+import croptext from './assets/croptext/result.gltf?url';
+import field from './assets/wheat_field_low_poly/scene.gltf?url';
+import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
 const App = () => {
   
   useEffect(() => {
     // Create the scene
     const scene = new THREE.Scene();
-    
+    const gltfloader = new GLTFLoader();
+    let wheatModel;
+    let croptextModel;
+    let islandModel;
+    let fieldModel;
+    let isFieldHovered = false;
+    let originalMaterials = new Map();
+    gltfloader.load(
+      wheat, 
+      (gltfScene) => {
+
+        wheatModel = gltfScene.scene;
+        wheatModel.position.set(1000, 1000, 1000);
+        scene.add(wheatModel);
+        
+       
+      },
+      (progress) => {
+        // Optional: Log loading progress
+        console.log("Loading progress:", (progress.loaded / progress.total * 100).toFixed(2) + "%");
+      },
+      (error) => {
+        // This will catch loading errors
+        console.error("Error loading wheat model:", error);
+      }
+    );
+    gltfloader.load(
+      island, 
+      (gltfScene) => {
+
+        islandModel = gltfScene.scene;
+        islandModel.scale.set(0.4, 0.4, 0.4)
+        islandModel.position.set(0, 0, 15);
+        scene.add(islandModel);
+        
+       
+      },
+      (progress) => {
+        // Optional: Log loading progress
+        console.log("Loading progress:", (progress.loaded / progress.total * 100).toFixed(2) + "%");
+      },
+      (error) => {
+        // This will catch loading errors
+        console.error("Error loading island model:", error);
+      }
+    );
+    gltfloader.load(
+      croptext, 
+      (gltfScene) => {
+
+        croptextModel = gltfScene.scene;
+        croptextModel.scale.set(2, 2, 2)
+        croptextModel.position.set(0, 8, 11);
+
+        // Rotate 180 degrees around Y axis (in radians)
+        croptextModel.rotation.y = Math.PI; // 180 degrees
+
+        // Make the model completely white by traversing all meshes
+        croptextModel.traverse((child) => {
+          if (child.isMesh) {
+            // Create a new white material
+            child.material = new THREE.MeshBasicMaterial({ color: 0xFFFFFF });
+            
+            // If you want to preserve the original material type but make it white:
+            // child.material.color.set(0xFFFFFF);
+          }
+        });
+        scene.add(croptextModel);
+        
+       
+      },
+      (progress) => {
+        // Optional: Log loading progress
+        console.log("Loading progress:", (progress.loaded / progress.total * 100).toFixed(2) + "%");
+      },
+      (error) => {
+        // This will catch loading errors
+        console.error("Error loading island model:", error);
+      }
+    );
+    gltfloader.load(
+      field, 
+      (gltfScene) => {
+
+        fieldModel = gltfScene.scene;
+        fieldModel.scale.set(0.004, 0.004, 0.004)
+        fieldModel.position.set(1, 3.8, 13);
+        fieldModel.traverse((child) => {
+          if (child.isMesh) {
+            // Mark this model as interactive
+            child.userData.isField = true;
+            
+            // Store original materials to restore later
+            originalMaterials.set(child.uuid, child.material.clone());
+          }
+        });
+        scene.add(fieldModel);
+        
+       
+      },
+      (progress) => {
+        // Optional: Log loading progress
+        console.log("Loading progress:", (progress.loaded / progress.total * 100).toFixed(2) + "%");
+      },
+      (error) => {
+        // This will catch loading errors
+        console.error("Error loading island model:", error);
+      }
+    );
     function setBackgroundImage(imagePath) {
       // Create a texture loader
       const backgroundLoader = new THREE.TextureLoader();
@@ -40,7 +153,7 @@ const App = () => {
 
     // Create the camera
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(10, 15, -22);
+    camera.position.set(5, 13, -25);
 
     // Create the renderer
     const renderer = new THREE.WebGLRenderer();
@@ -659,6 +772,7 @@ setTimeout(() => {
     const mousePosition = new THREE.Vector2();
     const raycaster = new THREE.Raycaster();
     let intersects;
+    let intersectsField;
 
     // Mouse movement handler
     window.addEventListener('mousemove', (e) => {
@@ -666,12 +780,29 @@ setTimeout(() => {
       mousePosition.y = -(e.clientY / window.innerHeight) * 2 + 1;
       raycaster.setFromCamera(mousePosition, camera);
       intersects = raycaster.intersectObject(planeMesh);
+      intersectsField = raycaster.intersectObject(fieldModel);
       if (intersects.length > 0) {
         const intersect = intersects[0];
         const highlightPos = new THREE.Vector3().copy(intersect.point).floor().addScalar(0.5);
         highlightMesh.position.set(highlightPos.x, 0, highlightPos.z);
         highlightMesh.material.color.setHex(0xFFFFFF);
       }
+      if (intersectsField.length > 0) {
+        // Mouse is hovering over the field
+        if (!isFieldHovered) {
+          isFieldHovered = true;
+          
+          // Apply highlight effect to the model
+          
+        }
+      } else if (isFieldHovered) {
+        // Mouse moved away from the field
+        isFieldHovered = false;
+        
+       
+      }
+      document.body.style.cursor = 'auto';
+
     });
 
     // Sphere mesh to add on mouse click
@@ -681,17 +812,191 @@ setTimeout(() => {
     );
 
     const objects = [];
+    let fieldInfoPanel;
+   
     // Mouse click handler
     window.addEventListener('mousedown', () => {
+      if (fieldModel && intersectsField && intersectsField.length > 0) {
+        showFieldInfoPanel();
+      } else {
+        hideFieldInfoPanel();
+      }
       if (intersects.length > 0) {
-        const sphereClone = sphereMesh.clone();
-        sphereClone.position.copy(highlightMesh.position);
-        scene.add(sphereClone);
-        objects.push(sphereClone);
-        highlightMesh.material.color.setHex(0xFF0000);
+        if (wheatModel) {
+          // Clone the wheat model
+          const wheatClone = wheatModel.clone();
+          
+          // Position the wheat clone at the highlight mesh location
+          wheatClone.position.copy(highlightMesh.position);
+          
+          // You might need to adjust scale if the wheat model is too big or small
+          wheatClone.scale.set(1, 1, 1);
+          wheatClone.position.y = 1;
+          wheatClone.traverse((child) => {
+            if (child.isMesh) {
+              child.renderOrder = 10; // Higher value = rendered later (on top)
+              
+              // If you're using transparent materials, make sure depthWrite is managed properly
+              
+            }
+          });  
+          // Add to scene and objects array
+          scene.add(wheatClone);
+          objects.push(wheatClone);
+          
+          // Change highlight color
+          highlightMesh.material.color.setHex(0xFF0000);
+        } else {
+          // Fallback to sphere if wheat model isn't loaded yet
+          const sphereClone = sphereMesh.clone();
+          sphereClone.position.copy(highlightMesh.position);
+          scene.add(sphereClone);
+          objects.push(sphereClone);
+          highlightMesh.material.color.setHex(0xFF0000);
+        }
       }
     });
-
+    function showFieldInfoPanel() {
+      // Remove existing panel if there is one
+      hideFieldInfoPanel();
+      
+      // Create a new panel element
+      fieldInfoPanel = document.createElement('div');
+      fieldInfoPanel.id = 'field-info-panel';
+      
+      // Apply advanced styling with CSS - centered positioning
+      fieldInfoPanel.style.position = 'fixed'; // fixed instead of absolute for viewport positioning
+      fieldInfoPanel.style.left = '50%';
+      fieldInfoPanel.style.top = '50%';
+      fieldInfoPanel.style.transform = 'translate(-50%, -50%)'; // Center the panel
+      fieldInfoPanel.style.backgroundColor = '#f8f9fa';
+      fieldInfoPanel.style.padding = '20px';
+      fieldInfoPanel.style.borderRadius = '8px';
+      fieldInfoPanel.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.15)';
+      fieldInfoPanel.style.zIndex = '1000';
+      fieldInfoPanel.style.minWidth = '300px';
+      fieldInfoPanel.style.maxWidth = '500px'; // Prevent it from being too wide
+      fieldInfoPanel.style.fontFamily = 'Arial, sans-serif';
+      fieldInfoPanel.style.border = '1px solid #e0e0e0';
+      fieldInfoPanel.style.transition = 'all 0.3s ease';
+      
+      // The rest of your styling and HTML remains the same
+      fieldInfoPanel.innerHTML = `
+        <style>
+          #field-info-panel h2 {
+            color: #2c3e50;
+            margin-top: 0;
+            font-size: 1.5rem;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+          }
+          
+          #field-info-panel p {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 20px;
+          }
+          
+          #field-info-panel .button-group {
+            display: flex;
+            gap: 10px;
+          }
+          
+          #field-info-panel button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s;
+          }
+          
+          #field-info-panel .primary-btn {
+            background-color: #3498db;
+            color: white;
+          }
+          
+          #field-info-panel .primary-btn:hover {
+            background-color: #2980b9;
+          }
+          
+          #field-info-panel .secondary-btn {
+            background-color: #e74c3c;
+            color: white;
+          }
+          
+          #field-info-panel .secondary-btn:hover {
+            background-color: #c0392b;
+          }
+          
+          #field-info-panel .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+          }
+          
+          #field-info-panel .stat-box {
+            background: #ecf0f1;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+          }
+          
+          #field-info-panel .stat-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #2c3e50;
+          }
+          
+          #field-info-panel .stat-label {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+            text-transform: uppercase;
+          }
+        </style>
+        
+        <h2>Optimize Field</h2>
+        
+        <div class="stat-grid">
+          <div class="stat-box">
+            <div class="stat-value">87%</div>
+            <div class="stat-label">Efficiency</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">12.5 ha</div>
+            <div class="stat-label">Field Size</div>
+          </div>
+        </div>
+        
+        <p>Select an optimization strategy for this field. Current resource allocation can be improved for better yield.</p>
+        
+        <div class="button-group">
+          <button class="primary-btn" id="optimize-btn">Optimize</button>
+          <button class="secondary-btn" id="close-panel-btn">Close</button>
+        </div>
+      `;
+      
+      // Add to the document
+      document.body.appendChild(fieldInfoPanel);
+      
+      // Add event listeners to buttons
+      document.getElementById('close-panel-btn').addEventListener('click', hideFieldInfoPanel);
+      document.getElementById('optimize-btn').addEventListener('click', () => {
+        alert('Optimizing field...');
+        // Add your optimization logic here
+      });
+    }
+    
+    // Function to hide the info panel
+    function hideFieldInfoPanel() {
+      const panel = document.getElementById('field-info-panel');
+      if (panel) {
+        document.body.removeChild(panel);
+        fieldInfoPanel = null;
+      }
+    }
     // Animation loop
     function animate(time) {
        /*****************************************
@@ -709,11 +1014,7 @@ setTimeout(() => {
         * CLOUD ANIMATION CALL - END
         *****************************************/
        animateRain();
-      objects.forEach((object) => {
-        object.rotation.x = time / 1000;
-        object.rotation.z = time / 1000;
-        object.position.y = 0.5 + 0.5 * Math.abs(Math.sin(time / 1000));
-      });
+     
       renderer.render(scene, camera);
     }
 

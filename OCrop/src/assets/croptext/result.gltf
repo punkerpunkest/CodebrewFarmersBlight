@@ -1,0 +1,120 @@
+{
+    "asset": {
+        "version": "2.0",
+        "generator": "Open Asset Import Library (assimp v5.2.cf7d3637)"
+    },
+    "extensionsUsed": [
+        "KHR_materials_volume",
+        "FB_ngon_encoding"
+    ],
+    "accessors": [
+        {
+            "bufferView": 0,
+            "byteOffset": 0,
+            "componentType": 5126,
+            "count": 30000,
+            "type": "VEC3",
+            "max": [
+                1.0004172325134278,
+                0.2506358325481415,
+                0.1280250996351242
+            ],
+            "min": [
+                -1.0011101961135865,
+                -0.24944405257701875,
+                -0.1279938668012619
+            ]
+        },
+        {
+            "bufferView": 1,
+            "byteOffset": 0,
+            "componentType": 5126,
+            "count": 30000,
+            "type": "VEC3",
+            "max": [
+                0.9999988079071045,
+                0.9999989867210388,
+                1.0
+            ],
+            "min": [
+                -0.9999996423721314,
+                -0.9999999403953552,
+                -1.0
+            ]
+        },
+        {
+            "bufferView": 2,
+            "byteOffset": 0,
+            "componentType": 5125,
+            "count": 30000,
+            "type": "SCALAR",
+            "max": [
+                29999
+            ],
+            "min": [
+                0
+            ]
+        }
+    ],
+    "buffers": [
+        {
+            "byteLength": 840000,
+            "uri": "result.bin"
+        }
+    ],
+    "bufferViews": [
+        {
+            "buffer": 0,
+            "byteOffset": 0,
+            "byteLength": 360000,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 360000,
+            "byteLength": 360000,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 720000,
+            "byteLength": 120000,
+            "target": 34963
+        }
+    ],
+    "materials": [
+        {
+            "name": "material"
+        }
+    ],
+    "meshes": [
+        {
+            "name": "Mesh1",
+            "primitives": [
+                {
+                    "mode": 4,
+                    "material": 0,
+                    "indices": 2,
+                    "attributes": {
+                        "POSITION": 0,
+                        "NORMAL": 1
+                    }
+                }
+            ]
+        }
+    ],
+    "nodes": [
+        {
+            "name": "Mesh1",
+            "mesh": 0
+        }
+    ],
+    "scenes": [
+        {
+            "nodes": [
+                0
+            ]
+        }
+    ],
+    "scene": 0
+}
