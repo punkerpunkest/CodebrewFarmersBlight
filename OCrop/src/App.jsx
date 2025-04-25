@@ -18,7 +18,8 @@ import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
 const App = () => {
   
   useEffect(() => {
-    // Create the scene  const scene = new THREE.Scene();
+    // Create the scene  
+    const scene = new THREE.Scene();
     const gltfloader = new GLTFLoader();
     let wheatModel;
 
