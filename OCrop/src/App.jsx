@@ -22,9 +22,11 @@ async function getWeather(lat, lon) {
     "longitude": lon,
     "daily": ["weather_code", "uv_index_max"],
     "hourly": ["temperature_2m", "relative_humidity_2m", "weather_code", "wind_direction_120m", "wind_direction_10m", "soil_moisture_3_to_9cm"],
-    "timezone": "GMT"
+    "timezone": "GMT",
+    "apikey": "fTcQWIiIg89maNKW"
+
   }; 
-  const url= "https://api.open-meteo.com/v1/forecast";
+  const url= "https://customer-api.open-meteo.com/v1/forecast";
   const responses = await fetchWeatherApi(url, parms);
   const response = responses[0];
 
@@ -208,7 +210,7 @@ const App = () => {
           // Update yieldGrid with the new data
           for (let i = 0; i < transformedYields.length && i < intensityGrid2.length; i++) {
             for (let j = 0; j < transformedYields[i].length && j < intensityGrid2[i].length; j++) {
-              intensityGrid2[i][j] = transformedYields[i][j];
+              intensityGrid2[j][i] = transformedYields[i][j];
             }
           }
           updateColorGrid(intensityGrid2);
@@ -231,6 +233,83 @@ const App = () => {
     const scene = new THREE.Scene();
     const gltfloader = new GLTFLoader();
     let wheatModel;
+    async function fetchNewYieldData(nutrient) {
+      console.log(`Fetching new yield data for nutrient: ${nutrient}`);
+      
+      // Show loading indicator on the grid
+      for (let x = 0; x < 16; x++) {
+        for (let z = 0; z < 16; z++) {
+          bestPlantGrid[x][z] = "Loading...";
+          intensityGrid2[x][z] = 10; // Default value while loading
+        }
+      }
+      
+      // Update the color grid with default values to show loading state
+      updateColorGrid(intensityGrid2);
+      
+      try {
+        // Use the same coordinates as the initial load
+        const coords = [Coordinates.flat()];
+        
+        // Call the API with the new nutrient value
+        const data = await getCropYields(coords, nutrient);
+        console.log(`Received new data for ${nutrient}:`, JSON.stringify(data));
+        
+        // Get the crop items without grouping
+        const cropItems = data.crops[0]; 
+    
+        // Group every 16 individual crops into a higher-level array
+        const transformedCrops = [];
+        for (let i = 0; i < cropItems.length; i += 16) {
+          transformedCrops.push(cropItems.slice(i, i + 16));
+        }
+    
+        // Get individual yields
+        const yieldItems = data.yields[0]; 
+    
+        // Group every 16 individual yields into a higher-level array
+        const transformedYields = [];
+        for (let i = 0; i < yieldItems.length; i += 16) {
+          transformedYields.push(yieldItems.slice(i, i + 16));
+        }
+    
+        console.log("New crop data:", transformedCrops);
+        console.log("New yield data:", transformedYields);
+        
+        // Update the bestPlantGrid with the new crop data
+        if (transformedCrops.length > 0) {
+          for (let i = 0; i < transformedCrops.length && i < bestPlantGrid.length; i++) {
+            for (let j = 0; j < transformedCrops[i].length && j < bestPlantGrid[i].length; j++) {
+              bestPlantGrid[i][j] = transformedCrops[i][j];
+            }
+          }
+          console.log(`Updated bestPlantGrid with ${nutrient} crop data`);
+        }
+        
+        // Update the intensityGrid2 with the new yield data
+        if (transformedYields.length > 0) {
+          for (let i = 0; i < transformedYields.length && i < intensityGrid2.length; i++) {
+            for (let j = 0; j < transformedYields[i].length && j < intensityGrid2[i].length; j++) {
+              intensityGrid2[i][j] = transformedYields[i][j];
+            }
+          }
+          
+          // Update the color grid with the new data
+          updateColorGrid(intensityGrid2);
+          console.log(`Updated intensityGrid2 with ${nutrient} yield data`);
+        }
+        
+      } catch (error) {
+        console.error(`Error fetching ${nutrient} yield data:`, error);
+        
+        // Restore default values in case of error
+        for (let x = 0; x < 16; x++) {
+          for (let z = 0; z < 16; z++) {
+            bestPlantGrid[x][z] = "Error loading data";
+          }
+        }
+      }
+    }
 
     const bestPlantGrid = [
       ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
@@ -902,7 +981,7 @@ function createColorGrid() {
   // Create a tile for each grid position
   for (let x = 0; x < 16; x++) {
     for (let z = 0; z < 16; z++) {
-      const value = intensityGrid[x][z];
+      const value = intensityGrid[z][x];
       const color = getColorForValue(value);
       
       // Create a plane geometry for this tile
@@ -1008,8 +1087,8 @@ function updateColorGrid(newData) {
 function createTextSprite() {
   // Create canvas for the text
   textCanvas = document.createElement('canvas');
-  textCanvas.width = 256;
-  textCanvas.height = 128;
+  textCanvas.width = 350;
+  textCanvas.height = 200;
   textContext = textCanvas.getContext('2d');
   
   // Create texture from canvas
@@ -1066,7 +1145,7 @@ function updateTextSprite(x, z) {
   try {
     bestPlant = bestPlantGrid[gridZ][gridX];
     currentCoordinate = Coordinates[gridZ][gridX];
-    currYield = intensityGrid[gridZ][gridX];
+    currYield = intensityGrid[gridX][gridZ];
 
   } catch (error) {
 
@@ -1075,13 +1154,18 @@ function updateTextSprite(x, z) {
   }
   
   // Text
-  textContext.font = 'bold 15px monospace';
+  textContext.font = 'bold 20px monospace';
   textContext.fillStyle = 'white';
   textContext.textAlign = 'center';
 
   textContext.fillText(`Yield: ${currYield}`, textCanvas.width / 2, 40);
-  textContext.fillText(`Best Plant: ${bestPlant}`, textCanvas.width / 2, 80);
-  textContext.fillText(`Position: [${gridZ}][${gridX}], Coordinate: ${currentCoordinate}`, textCanvas.width / 2, 120);
+  textContext.fillText(`Best Plant: ${bestPlant}`, textCanvas.width / 2, 70);
+  textContext.fillText(`Coordinate: ${currentCoordinate}`, textCanvas.width / 2, 100);
+  
+  // Add weather information
+  textContext.fillText(`Temperature: °C`, textCanvas.width / 2, 130);
+  textContext.fillText(`Humidity: %`, textCanvas.width / 2, 160);
+  textContext.fillText(`Wind:  m/s`, textCanvas.width / 2, 190);
 
 
   
@@ -1380,43 +1464,38 @@ setTimeout(() => {
       // Add event listeners with capture phase (true as third parameter)
       caloriesBtn.addEventListener('click', function(e) {
         console.log('Calories button clicked');
+
         e.stopPropagation();
-        if (typeof updateColorGrid === 'function') {
-          updateColorGrid(intensityGrid1 || intensityGrid2); // Fallback to grid2 if grid1 doesn't exist
-        }
+        fetchNewYieldData("Calories");
+        hideFieldInfoPanel();
       }, true);
       
       proteinBtn.addEventListener('click', function(e) {
         console.log('Protein button clicked');
         e.stopPropagation();
-        if (typeof updateColorGrid === 'function' && typeof intensityGrid2 !== 'undefined') {
-          updateColorGrid(intensityGrid2);
-        }
+        fetchNewYieldData("Calories");
         hideFieldInfoPanel();
       }, true);
       
       waterBtn.addEventListener('click', function(e) {
         console.log('Oil button clicked');
         e.stopPropagation();
-        if (typeof updateColorGrid === 'function' && typeof intensityGrid3 !== 'undefined') {
-          updateColorGrid(intensityGrid3);
-        }
+        fetchNewYieldData("Oil");
+        hideFieldInfoPanel();
       }, true);
       
       carbsBtn.addEventListener('click', function(e) {
         console.log('Carbs button clicked');
         e.stopPropagation();
-        if (typeof updateColorGrid === 'function' && typeof intensityGrid4 !== 'undefined') {
-          updateColorGrid(intensityGrid4);
-        }
+        fetchNewYieldData("Carbohydrates");
+        hideFieldInfoPanel();
       }, true);
       
       efaBtn.addEventListener('click', function(e) {
         console.log('EFA button clicked');
         e.stopPropagation();
-        if (typeof updateColorGrid === 'function' && typeof intensityGrid5 !== 'undefined') {
-          updateColorGrid(intensityGrid5);
-        }
+        fetchNewYieldData("EFA");
+        hideFieldInfoPanel();
       }, true);
     }
     
