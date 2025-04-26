@@ -16,15 +16,107 @@ import { fetchWeatherApi } from 'openmeteo';
 import protein from './assets/CropProteinA.png';
 import calories from './assets/CropCalories.png';
 import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
+async function getWeatherBulk(coordsArray) {
+  // Create an array to hold all the promises
+  const allPromises = [];
+
+  // Flatten the nested array - we need to know which y,x each result belongs to
+  for (let y = 0; y < coordsArray.length; y++) {
+    for (let x = 0; x < coordsArray[y].length; x++) {
+      // Create a promise for each coordinate
+      const promise = (async () => {
+        try {
+          const lat = coordsArray[y][x][0];
+          const lon = coordsArray[y][x][1];
+          
+          const parms = {
+            "latitude": lat,
+            "longitude": lon,
+            "daily": ["weather_code", "uv_index_max"],
+            "hourly": ["temperature_2m", "relative_humidity_2m", "weather_code", "cloud_cover", "precipitation", "wind_speed_120m"],
+            "timezone": "GMT",
+            "apikey": "fTcQWIiIg89maNKW"
+          }; 
+          
+          const url = "https://customer-api.open-meteo.com/v1/forecast";
+          const responses = await fetchWeatherApi(url, parms);
+          const response = responses[0];
+
+          const firstfivetemp = response.hourly().variables(0).valuesArray().slice(0, 5);
+          const firstfivewind120m = response.hourly().variables(5).valuesArray().slice(0, 5);
+          const firstfivehumidity = response.hourly().variables(1).valuesArray().slice(0, 5);
+          const firstfiveprecipitation = response.hourly().variables(4).valuesArray().slice(0, 5);
+          const firstfivecloudcover = response.hourly().variables(3).valuesArray().slice(0, 5);
+          
+          return {
+            y, x,
+            temp: firstfivetemp.reduce((sum, current) => sum + current, 0) / firstfivetemp.length,
+            humidity: firstfivehumidity.reduce((sum, current) => sum + current, 0) / firstfivehumidity.length,
+            wind120m: firstfivewind120m.reduce((sum, current) => sum + current, 0) / firstfivewind120m.length,
+            precipitation: firstfiveprecipitation.reduce((sum, current) => sum + current, 0) / firstfiveprecipitation.length,
+            cloud: firstfivecloudcover.reduce((sum, current) => sum + current, 0) / firstfivecloudcover.length
+          };
+        } catch (error) {
+          console.error(`Error getting weather for coords [${coordsArray[y][x]}]:`, error);
+          return {
+            y, x,
+            temp: 20, // Default values in case of error
+            wind120m: 0,
+            humidity: 50,
+            precipitation: 0,
+            cloud: 25
+          };
+        }
+      })();
+      
+      allPromises.push(promise);
+    }
+  }
+  
+  // Execute all promises in parallel
+  const results = await Promise.all(allPromises);
+  
+  // Initialize result arrays
+  const temps = Array(coordsArray.length).fill().map(() => []);
+  const humidities = Array(coordsArray.length).fill().map(() => []);
+  const precipitations = Array(coordsArray.length).fill().map(() => []);
+  const clouds = Array(coordsArray.length).fill().map(() => []);
+  const wind120m = Array(coordsArray.length).fill().map(() => []);
+  
+  // Populate results back into the original structure
+  results.forEach(result => {
+    if (!temps[result.y]) temps[result.y] = [];
+    if (!humidities[result.y]) humidities[result.y] = [];
+    if (!precipitations[result.y]) precipitations[result.y] = [];
+    if (!clouds[result.y]) clouds[result.y] = [];
+    if (!wind120m[result.y]) wind120m[result.y] = [];
+    
+    temps[result.y][result.x] = result.temp;
+    humidities[result.y][result.x] = result.humidity;
+    precipitations[result.y][result.x] = result.precipitation;
+    clouds[result.y][result.x] = result.cloud;
+    wind120m[result.y][result.x] = result.wind120m;
+
+  });
+  
+  return { 
+    temps, 
+    humidities, 
+    precipitations, 
+    clouds,
+    wind120m
+  };
+}
+
+// Keep your updated getWeather function for single coordinate lookups
 async function getWeather(lat, lon) {
   const parms = {
     "latitude": lat,
     "longitude": lon,
     "daily": ["weather_code", "uv_index_max"],
-    "hourly": ["temperature_2m", "relative_humidity_2m", "weather_code", "wind_direction_120m", "wind_direction_10m", "soil_moisture_3_to_9cm"],
+    "hourly": ["temperature_2m", "relative_humidity_2m", "weather_code", "cloud_cover", "precipitation"],
     "timezone": "GMT",
     "apikey": "fTcQWIiIg89maNKW"
-
   }; 
   const url= "https://customer-api.open-meteo.com/v1/forecast";
   const responses = await fetchWeatherApi(url, parms);
@@ -32,15 +124,13 @@ async function getWeather(lat, lon) {
 
   const firstfivetemp = response.hourly().variables(0).valuesArray().slice(0, 5);
   const firstfivehumidity = response.hourly().variables(1).valuesArray().slice(0, 5);
-  const firstfivewind10m = response.hourly().variables(4).valuesArray().slice(0, 5);
-  const firstfivewind120m = response.hourly().variables(3).valuesArray().slice(0, 5);
-  const firstfivesoilmoisture = response.hourly().variables(5).valuesArray().slice(0, 5);
+  const firstfiveprecipitation = response.hourly().variables(4).valuesArray().slice(0, 5);
+  const firstfivecloudcover = response.hourly().variables(3).valuesArray().slice(0, 5);
   return {
     temp: firstfivetemp.reduce((sum, current) => sum + current, 0) / firstfivetemp.length,
     humidity: firstfivehumidity.reduce((sum, current) => sum + current, 0) / firstfivehumidity.length,
-    wind10m: firstfivewind10m.reduce((sum, current) => sum + current, 0) / firstfivewind10m.length,
-    wind120m: firstfivewind120m.reduce((sum, current) => sum + current, 0) / firstfivewind120m.length,
-    soilmoisture: firstfivesoilmoisture.reduce((sum, current) => sum + current, 0) / firstfivesoilmoisture.length
+    precipitation: firstfiveprecipitation.reduce((sum, current) => sum + current, 0) / firstfiveprecipitation.length,
+    cloud: firstfivecloudcover.reduce((sum, current) => sum + current, 0) / firstfivecloudcover.length
   };
 }
 async function getCropYields(coords, nutrient) {
@@ -132,11 +222,11 @@ const App = () => {
   ];
   
   const [weatherData, setWeatherData] = useState({
-    temp: 0,
-    humidity: 0,
-    wind10m: 0,
-    wind120m: 0,
-    soilmoisture: 0
+    temp: "Loading...", // Just using first coordinate for display in UI
+    humidity: "Loading...",
+    precipitation: "Loading...",
+    cloud: "Loading...",
+    wind120m: "Loading..."
   });
   const [yieldData, setYieldData] = useState({
     crops: [],
@@ -148,17 +238,7 @@ const App = () => {
   const [isYieldLoading, setIsYieldLoading] = useState(true);
   useEffect(() => {
     // Create the scene  
-    const fetchWeatherData = async () => {
-      try {
-
-        const data = await getWeather(61, -0.1278); 
-        setWeatherData(data);
-      } catch (error) {
-        console.error("Error fetching weather data:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    
 
     const fetchYieldData = async () => {
       try {
@@ -224,6 +304,176 @@ const App = () => {
         setIsYieldLoading(false);
       }
     };
+    // In the fetchWeatherData function, update to populate grid data properly:
+
+const fetchWeatherData = async () => {
+  try {
+    // Use the same coordinates grid as the yield data
+    const coords = [Coordinates.flat()];
+    
+    // Get bulk weather data for all coordinates
+    const data = await getWeatherBulk(coords);
+    console.log("Original weather data:", JSON.stringify(data));
+    
+    // Get individual temperature values without grouping
+    const tempItems = data.temps[0]; // Get the flat array of temperatures
+
+    // Group every 16 individual temperature values into a higher-level array
+    const transformedTemps = [];
+    for (let i = 0; i < tempItems.length; i += 16) {
+      transformedTemps.push(tempItems.slice(i, i + 16));
+    }
+
+    // Get individual humidity values
+    const humidityItems = data.humidities[0]; // Get the flat array of humidity values
+
+    // Group every 16 individual humidity values into a higher-level array
+    const transformedHumidities = [];
+    for (let i = 0; i < humidityItems.length; i += 16) {
+      transformedHumidities.push(humidityItems.slice(i, i + 16));
+    }
+
+    // Do the same for precipitation data
+    const precipitationItems = data.precipitations[0];
+    const transformedPrecipitations = [];
+    for (let i = 0; i < precipitationItems.length; i += 16) {
+      transformedPrecipitations.push(precipitationItems.slice(i, i + 16));
+    }
+
+    // And for cloud cover data
+    const cloudItems = data.clouds[0];
+    const transformedClouds = [];
+    for (let i = 0; i < cloudItems.length; i += 16) {
+      transformedClouds.push(cloudItems.slice(i, i + 16));
+    }
+
+    // Process wind data
+    const windItems = data.wind120m[0];
+    const transformedWinds = [];
+    for (let i = 0; i < windItems.length; i += 16) {
+      transformedWinds.push(windItems.slice(i, i + 16));
+    }
+
+    console.log("Temperature data:", transformedTemps);
+    console.log("Humidity data:", transformedHumidities);
+    console.log("Precipitation data:", transformedPrecipitations);
+    console.log("Cloud cover data:", transformedClouds);
+    console.log("Wind data:", transformedWinds);
+
+    // Update your state with the weather data
+      // Calculate average values for each weather parameter
+    let tempSum = 0, humiditySum = 0, precipSum = 0, cloudSum = 0, windSum = 0;
+    let tempCount = 0, humidityCount = 0, precipCount = 0, cloudCount = 0, windCount = 0;
+
+    // Sum up all values
+    for (let z = 0; z < transformedTemps.length; z++) {
+      for (let x = 0; x < transformedTemps[z].length; x++) {
+        if (typeof transformedTemps[z][x] === 'number') {
+          tempSum += transformedTemps[z][x];
+          tempCount++;
+        }
+        if (typeof transformedHumidities[z][x] === 'number') {
+          humiditySum += transformedHumidities[z][x];
+          humidityCount++;
+        }
+        if (typeof transformedPrecipitations[z][x] === 'number') {
+          precipSum += transformedPrecipitations[z][x];
+          precipCount++;
+        }
+        if (typeof transformedClouds[z][x] === 'number') {
+          cloudSum += transformedClouds[z][x];
+          cloudCount++;
+        }
+        if (typeof transformedWinds[z][x] === 'number') {
+          windSum += transformedWinds[z][x];
+          windCount++;
+        }
+      }
+    }
+
+    // Calculate averages
+    const avgTemp = tempCount > 0 ? tempSum / tempCount : 0;
+    const avgHumidity = humidityCount > 0 ? humiditySum / humidityCount : 0;
+    const avgPrecip = precipCount > 0 ? precipSum / precipCount : 0;
+    const avgCloud = cloudCount > 0 ? cloudSum / cloudCount : 0;
+    const avgWind = windCount > 0 ? windSum / windCount : 0;
+
+    console.log(`Average temperature: ${avgTemp.toFixed(1)}°C`);
+    console.log(`Average humidity: ${avgHumidity.toFixed(1)}%`);
+    console.log(`Average precipitation: ${avgPrecip.toFixed(1)}mm`);
+    console.log(`Average cloud cover: ${avgCloud.toFixed(1)}%`);
+    console.log(`Average wind speed: ${avgWind.toFixed(1)}m/s`);
+
+    // Update your state with the average weather data instead of first coordinate
+    setWeatherData({
+      temp: avgTemp,
+      humidity: avgHumidity,
+      precipitation: avgPrecip,
+      cloud: avgCloud,
+      wind120m: avgWind,
+    });
+
+    // Update the temperature grid with the transformed data
+    if (transformedTemps.length > 0) {
+      for (let i = 0; i < transformedTemps.length && i < temperatureGrid.length; i++) {
+        for (let j = 0; j < transformedTemps[i].length && j < temperatureGrid[i].length; j++) {
+          temperatureGrid[i][j] = transformedTemps[i][j];
+        }
+      }
+      console.log("Updated temperatureGrid with transformed temperature data");
+    }
+
+    // Update the humidity grid with the transformed data
+    if (transformedHumidities.length > 0) {
+      for (let i = 0; i < transformedHumidities.length && i < humidityGrid.length; i++) {
+        for (let j = 0; j < transformedHumidities[i].length && j < humidityGrid[i].length; j++) {
+          humidityGrid[i][j] = transformedHumidities[i][j];
+        }
+      }
+      console.log("Updated humidityGrid with transformed humidity data");
+    }
+
+    // Update the precipitation grid with the transformed data
+    if (transformedPrecipitations.length > 0) {
+      for (let i = 0; i < transformedPrecipitations.length && i < precipitationGrid.length; i++) {
+        for (let j = 0; j < transformedPrecipitations[i].length && j < precipitationGrid[i].length; j++) {
+          precipitationGrid[i][j] = transformedPrecipitations[i][j];
+        }
+      }
+      console.log("Updated precipitationGrid with transformed precipitation data");
+    }
+
+    // Update the cloud grid with the transformed data
+    if (transformedClouds.length > 0) {
+      for (let i = 0; i < transformedClouds.length && i < cloudGrid2.length; i++) {
+        for (let j = 0; j < transformedClouds[i].length && j < cloudGrid2[i].length; j++) {
+          cloudGrid2[i][j] = transformedClouds[i][j];
+        }
+      }
+      console.log("Updated cloudGrid2 with transformed cloud data");
+    }
+
+    // Update the wind grid with the transformed data
+    if (transformedWinds.length > 0) {
+      for (let i = 0; i < transformedWinds.length && i < windGrid2.length; i++) {
+        for (let j = 0; j < transformedWinds[i].length && j < windGrid2[i].length; j++) {
+          windGrid2[i][j] = transformedWinds[i][j];
+        }
+      }
+      console.log("Updated windGrid2 with transformed wind data");
+    }
+
+    if (transformedClouds.length > 0 && transformedPrecipitations.length > 0) {
+      // Call the function to update clouds and rain after data is loaded
+      updateCloudAndRainEffects();
+    }
+
+  } catch (error) {
+    console.error("Error fetching weather data:", error);
+  } finally {
+    setIsLoading(false);
+  }
+};
     
     // Function to transform the data
    
@@ -329,6 +579,11 @@ const App = () => {
       ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."],
       ["Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading...", "Loading..."]
     ];
+    const temperatureGrid = Array(16).fill().map(() => Array(16).fill("Loading..."));
+    const humidityGrid = Array(16).fill().map(() => Array(16).fill("Loading..."));
+    const precipitationGrid = Array(16).fill().map(() => Array(16).fill("Loading..."));
+    const cloudGrid2 = Array(16).fill().map(() => Array(16).fill("Loading..."));
+    const windGrid2 = Array(16).fill().map(() => Array(16).fill("Loading..."));
 
     const intensityGrid2 = [
       [10.1, 10.2, 10.1, 10.3, 10.2, 10.1, 10.4, 10.2, 10.3, 10.1, 10.2, 10.3, 10.4, 10.2, 10.3, 10.1],
@@ -601,24 +856,23 @@ const App = () => {
      *****************************************/
     // Define a 16x16 array for wind positions
     const windGrid = [
-      /*  0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15  */
-        [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 0
-        [false,false,false,false,false, true , true ,false,false,false,false,false,false,false,false,false], // 1
-        [false,false,false,false, true , true , true ,false,false,false,false,false,false,false,false,false], // 2
-        [false,false,false, true , true , true , true ,false,false,false,false,false,false,false,false,false], // 3
-        [false,false,false,false, true , true , true ,false,false,false,false,false,false,false,false,false], // 4
-        [false,false,false,false,false, true , true ,false,false,false,false,false,false,false,false,false], // 5
-        [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 6
-        [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 7
-        [false,false,false,false,false,false,false,false, true , true ,false,false,false,false,false,false], // 8
-        [false,false,false,false,false,false,false, true , true , true ,false,false,false,false,false,false], // 9
-        [false,false,false,false,false,false, true , true , true ,false,false,false,false,false,false,false], //10
-        [false,false,false,false,false,false,false, true , true ,false,false,false,false,false,false,false], //11
-        [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], //12
-        [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], //13
-        [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], //14
-        [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], //15
-      ];
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 0
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 1
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 2
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 3
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 4
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 5
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 6
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 7
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 8
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 9
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 10
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 11
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 12
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 13
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 14
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 15
+    ];
       
       
     
@@ -723,24 +977,24 @@ const App = () => {
      *****************************************/
     // Define a 16x16 array for cloud positions (true = cloud, false = no cloud)
     const cloudGrid = [
-      /* 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 */
-        [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 0
-        [false,false,false,false,false, true , true , true , true ,false,false,false,false,false,false,false], // 1
-        [false,false,false,false, true , true , true , true , true , true ,false,false,false,false,false,false], // 2
-        [false,false,false,false, true , true , true , true , true , true ,false,false,false,false,false,false], // 3
-        [false,false,false,false,false, true , true , true , true ,false,false,false,false,false,false,false], // 4
-        [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 5
-        [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 6
-        [false,false,false,false,false,false,false,false, true , true , true , true ,false,false,false,false], // 7
-        [false,false,false,false,false,false,false, true , true , true , true , true , true ,false,false,false], // 8
-        [false,false,false,false,false,false,false, true , true , true , true , true , true ,false,false,false], // 9
-        [false,false,false,false,false,false,false,false, true , true , true , true ,false,false,false,false], // 10
-        [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 11
-        [false,false, true , true , true ,false,false,false,false,false,false,false,false,false,false,false], // 12
-        [false, true , true , true , true , true ,false,false,false,false,false,false,false,false,false,false], // 13
-        [false, true , true , true , true , true ,false,false,false,false,false,false,false,false,false,false], // 14
-        [false,false, true , true , true ,false,false,false,false,false,false,false,false,false,false,false], // 15
-      ];
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 0
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 1
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 2
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 3
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 4
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 5
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 6
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 7
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 8
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 9
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 10
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 11
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 12
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 13
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 14
+      [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 15
+    ];
+    
       
     
     
@@ -806,23 +1060,22 @@ const raindrops = [];
 // Define a 16x16 array to determine which cloud tiles have rainfall
 // true = raining, false = not raining
 const rainfallGrid = [
-  /* 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 */
-    [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 0
-    [false,false,false,false,false,false, true , true ,false,false,false,false,false,false,false,false], // 1
-    [false,false,false,false,false, true , true , true , true ,false,false,false,false,false,false,false], // 2
-    [false,false,false,false,false, true , true , true , true ,false,false,false,false,false,false,false], // 3
-    [false,false,false,false,false,false, true , true ,false,false,false,false,false,false,false,false], // 4
-    [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 5
-    [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 6
-    [false,false,false,false,false,false,false,false,false, true , true ,false,false,false,false,false], // 7
-    [false,false,false,false,false,false,false,false, true , true , true , true ,false,false,false,false], // 8
-    [false,false,false,false,false,false,false,false, true , true , true , true ,false,false,false,false], // 9
-    [false,false,false,false,false,false,false,false,false, true , true ,false,false,false,false,false], // 10
-    [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 11
-    [false,false,false, true , true ,false,false,false,false,false,false,false,false,false,false,false], // 12
-    [false,false, true , true , true , true ,false,false,false,false,false,false,false,false,false,false], // 13
-    [false,false, true , true , true , true ,false,false,false,false,false,false,false,false,false,false], // 14
-    [false,false,false, true , true ,false,false,false,false,false,false,false,false,false,false,false], // 15
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 0
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 1
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 2
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 3
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 4
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 5
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 6
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 7
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 8
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 9
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 10
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 11
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 12
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 13
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 14
+  [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false], // 15
 ];
 
 // Create a rain material (semi-transparent blue)
@@ -1084,6 +1337,211 @@ function updateColorGrid(newData) {
   
   console.log("Color grid rebuilt with", colorGridContainer.children.length, "tiles");
 }
+
+// Function to update cloud and rain effects based on data (top 5% only)
+function updateCloudAndRainEffects() {
+  // First, calculate the values for cloud data
+  const cloudValues = [];
+  for (let z = 0; z < 16; z++) {
+    for (let x = 0; x < 16; x++) {
+      if (typeof cloudGrid2[z][x] === 'number') {
+        cloudValues.push(cloudGrid2[z][x]);
+      }
+    }
+  }
+  
+  // Calculate the values for precipitation data
+  const precipValues = [];
+  for (let z = 0; z < 16; z++) {
+    for (let x = 0; x < 16; x++) {
+      if (typeof precipitationGrid[z][x] === 'number') {
+        precipValues.push(precipitationGrid[z][x]);
+      }
+    }
+  }
+  const windValues = [];
+  for (let z = 0; z < 16; z++) {
+    for (let x = 0; x < 16; x++) {
+      if (typeof windGrid2[z][x] === 'number') {
+        windValues.push(windGrid2[z][x]);
+      }
+    }
+  }
+  
+  // Sort values for percentile calculation
+  cloudValues.sort((a, b) => a - b);
+  precipValues.sort((a, b) => a - b);
+  windValues.sort((a, b) => a - b);
+  
+  // Find the 95th percentile (top 5%)
+  const cloudThreshold = cloudValues[Math.floor(cloudValues.length * 0.95)];
+  const precipThreshold = precipValues[Math.floor(precipValues.length * 0.95)];
+  const windThreshold = windValues[Math.floor(windValues.length * 0.95)];
+  
+  console.log(`Cloud cover threshold (top 5%): ${cloudThreshold}`);
+  console.log(`Precipitation threshold (top 5%): ${precipThreshold}`);
+  console.log(`Wind speed threshold (top 5%): ${windThreshold}`);
+  
+  // Clear existing cloud meshes
+  while (cloudContainer.children.length > 0) {
+    cloudContainer.remove(cloudContainer.children[0]);
+  }
+  cloudMeshes.length = 0;
+   // Clear existing wind particles
+   while (windParticles.length > 0) {
+    const particle = windParticles.pop();
+    scene.remove(particle.mesh);
+  }
+  
+  // First, reset all cloud and rainfall grid values
+  for (let x = 0; x < 16; x++) {
+    for (let z = 0; z < 16; z++) {
+      cloudGrid[x][z] = false;
+      rainfallGrid[x][z] = false;
+      windGrid[x][z] = false;
+    }
+  }
+  
+  // Identify cells with high precipitation (for rain)
+  const rainCells = [];
+  for (let z = 0; z < 16; z++) {
+    for (let x = 0; x < 16; x++) {
+      if (typeof precipitationGrid[z][x] === 'number' && precipitationGrid[z][x] >= precipThreshold) {
+        rainCells.push({x, z});
+      }
+    }
+  }
+  
+  // Identify cells with high cloud cover
+  const cloudCells = [];
+  for (let z = 0; z < 16; z++) {
+    for (let x = 0; x < 16; x++) {
+      if (typeof cloudGrid2[z][x] === 'number' && cloudGrid2[z][x] >= cloudThreshold) {
+        cloudCells.push({x, z});
+      }
+    }
+  }
+  const windCells = [];
+  for (let z = 0; z < 16; z++) {
+    for (let x = 0; x < 16; x++) {
+      if (typeof windGrid2[z][x] === 'number' && windGrid2[z][x] >= windThreshold) {
+        windCells.push({x, z});
+      }
+    }
+  }
+  // First, mark cloud cells
+  for (const cell of cloudCells) {
+    cloudGrid[cell.x][cell.z] = true;
+  }
+  
+  // Then, mark rain cells and ensure they also have clouds
+  for (const cell of rainCells) {
+    rainfallGrid[cell.x][cell.z] = true;
+    
+    // Ensure there's a cloud where it's raining (even if cloud cover isn't in top 5%)
+    if (!cloudGrid[cell.x][cell.z]) {
+      cloudGrid[cell.x][cell.z] = true;
+    }
+  }
+  for (const cell of windCells) {
+    windGrid[cell.x][cell.z] = true;
+  }
+  
+  // Create cloud meshes for all cloud positions
+  for (let x = 0; x < 16; x++) {
+    for (let z = 0; z < 16; z++) {
+      if (cloudGrid[x][z]) {
+        // Create a cloud box for this position
+        const cloudGeometry = new THREE.BoxGeometry(1, 0.3, 1);
+        const cloudMesh = new THREE.Mesh(cloudGeometry, cloudMaterial);
+        cloudMesh.castShadow = true;
+        cloudMesh.receiveShadow = false;
+        
+        // Position the cloud above the grid
+        cloudMesh.position.set(
+          x - 7.5, // Center the clouds over the grid
+          5,       // Height above the grid
+          z - 7.5  // Center the clouds over the grid
+        );
+        
+        // Add some randomness to make clouds look more natural
+        cloudMesh.scale.x = 0.8 + Math.random() * 0.4;
+        cloudMesh.scale.z = 0.8 + Math.random() * 0.4;
+        
+        // Add the cloud to the scene
+        cloudContainer.add(cloudMesh);
+        cloudMeshes.push(cloudMesh);
+      }
+    }
+  }
+  for (let x = 0; x < 16; x++) {
+    for (let z = 0; z < 16; z++) {
+      if (windGrid[x][z]) {
+        // Create wind particles for this grid cell
+        const particleCount = 5 + Math.floor(Math.random() * 5); // 5-9 particles per cell
+        
+        // Get the actual wind value to scale the wind effect
+        const windValue = windGrid2[z][x];
+        const windIntensity = windValue / windThreshold; // Normalize relative to threshold
+        
+        for (let i = 0; i < particleCount; i++) {
+          // Create a small line mesh to represent wind
+          const windGeometry = new THREE.CylinderGeometry(0.02, 0.02, 0.6 * windIntensity, 4);
+          const windMaterial = new THREE.MeshBasicMaterial({
+            color: 0xFFFFFF,
+            transparent: true,
+            opacity: 0.4 + (windIntensity * 0.3),
+            emissive: 0xCCCCCC,
+            emissiveIntensity: 0.3
+          });
+          
+          const windMesh = new THREE.Mesh(windGeometry, windMaterial);
+          windMesh.renderOrder = 10;
+          windMesh.castShadow = false;
+          windMesh.receiveShadow = false;
+          
+          // Position slightly above the grid with random offset within the cell
+          windMesh.position.set(
+            x - 7.5 + (Math.random() * 0.8 - 0.4), // Center with slight randomness
+            0.2 + Math.random() * 0.2,             // Slightly above the grid
+            z - 7.5 + (Math.random() * 0.8 - 0.4)  // Center with slight randomness
+          );
+          
+          // Rotate to be horizontal (like wind flowing)
+          windMesh.rotation.z = Math.PI / 2;
+          
+          // Wind direction (slightly randomized but generally west to east)
+          // Use an angle based on the wind value for more variation
+          windMesh.rotation.y = Math.PI / 4 + (windIntensity * Math.PI / 8);
+          
+          // Add to scene
+          scene.add(windMesh);
+          
+          // Store for animation with wind intensity factored in
+          windParticles.push({
+            mesh: windMesh,
+            speed: 0.001 * windIntensity * 3, // Scale speed by wind intensity
+            cell: { x, z },
+            phase: Math.random() * Math.PI * 2, // Random starting phase
+            originalY: windMesh.position.y,
+            intensity: windIntensity // Store intensity for animations
+          });
+        }
+      }
+    }
+  }
+  
+  // Clear existing raindrops
+  while (rainContainer.children.length > 0) {
+    rainContainer.remove(rainContainer.children[0]);
+  }
+  raindrops.length = 0;
+  
+ 
+  
+  console.log(`Updated clouds: ${cloudMeshes.length} clouds created`);
+  console.log(`Rain enabled on ${rainCells.length} grid cells`);
+}
 function createTextSprite() {
   // Create canvas for the text
   textCanvas = document.createElement('canvas');
@@ -1123,34 +1581,46 @@ function updateTextSprite(x, z) {
   textContext.lineWidth = 4;
   textContext.strokeRect(2, 2, textCanvas.width - 4, textCanvas.height - 4);
   
-  // Log the raw input values
-
-  
   // Make sure coordinates are within bounds (0-15) for our 16x16 grid
   const gridX = Math.max(0, Math.min(15, Math.floor(x)));
   const gridZ = Math.max(0, Math.min(15, Math.floor(z)));
-  
-
   
   // Check for negative values
   if (x < 0) console.warn("Warning: Negative X coordinate received");
   if (z < 0) console.warn("Warning: Negative Z coordinate received");
   
-  // Get best plant from our array
-  // Use try-catch to detect any array access errors
+  // Get values from all our grid data structures
   let bestPlant = "Unknown";
   let currYield = "Unknown";
   let currentCoordinate = "Unknown";
+  let currentTemp = "Unknown";
+  let currentHumidity = "Unknown";
+  let currentPrecipitation = "Unknown";
+  let currentCloud = "Unknown";
+  let currentWind = "Unknown";
 
   try {
+    // Access data from respective grids, making sure to use the correct indices
     bestPlant = bestPlantGrid[gridZ][gridX];
     currentCoordinate = Coordinates[gridZ][gridX];
     currYield = intensityGrid[gridX][gridZ];
-
+    
+    // Get weather data from their respective grids
+    currentTemp = temperatureGrid[gridZ][gridX];
+    currentHumidity = humidityGrid[gridZ][gridX];
+    currentPrecipitation = precipitationGrid[gridZ][gridX];
+    currentCloud = cloudGrid2[gridZ][gridX];
+    currentWind = windGrid2[gridZ][gridX];
+    
+    // Format numeric values for better display
+    if (typeof currYield === 'number') currYield = currYield.toFixed(2);
+    if (typeof currentTemp === 'number') currentTemp = currentTemp.toFixed(1);
+    if (typeof currentHumidity === 'number') currentHumidity = currentHumidity.toFixed(1);
+    if (typeof currentPrecipitation === 'number') currentPrecipitation = currentPrecipitation.toFixed(1);
+    if (typeof currentCloud === 'number') currentCloud = currentCloud.toFixed(1);
+    if (typeof currentWind === 'number') currentWind = currentWind.toFixed(1);
   } catch (error) {
-
-    console.error(`Error accessing bestPlantGrid[${gridZ}][${gridX}]:`, error);
-    console.error(`Error accessing coordinates[${gridZ}][${gridX}]:`, error);
+    console.error(`Error accessing grid data at [${gridZ}][${gridX}]:`, error);
   }
   
   // Text
@@ -1158,16 +1628,15 @@ function updateTextSprite(x, z) {
   textContext.fillStyle = 'white';
   textContext.textAlign = 'center';
 
+  // Display all relevant information
   textContext.fillText(`Yield: ${currYield}`, textCanvas.width / 2, 40);
   textContext.fillText(`Best Plant: ${bestPlant}`, textCanvas.width / 2, 70);
   textContext.fillText(`Coordinate: ${currentCoordinate}`, textCanvas.width / 2, 100);
   
   // Add weather information
-  textContext.fillText(`Temperature: °C`, textCanvas.width / 2, 130);
-  textContext.fillText(`Humidity: %`, textCanvas.width / 2, 160);
-  textContext.fillText(`Wind:  m/s`, textCanvas.width / 2, 190);
-
-
+  textContext.fillText(`Temperature: ${currentTemp}°C`, textCanvas.width / 2, 130);
+  textContext.fillText(`Humidity: ${currentHumidity}%`, textCanvas.width / 2, 160);
+  textContext.fillText(`Wind: ${currentWind} m/s`, textCanvas.width / 2, 190);
   
   // Update texture
   textTexture.needsUpdate = true;
@@ -1553,20 +2022,22 @@ setTimeout(() => {
   
   return (
     <div className="fixed inset-0 flex justify-between p-4 z-50 pointer-events-none">
-    {/* Left panel */}
+    {/* Left panel - expanded size for all weather data */}
     <div 
-      className="p-5 bg-gray-800 text-white overflow-hidden w-72 h-32 flex flex-col justify-center pointer-events-auto"
+      className="p-5 bg-gray-800 text-white overflow-hidden w-96 h-56 flex flex-col justify-center pointer-events-auto"
       style={{
-        
         boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1)",
         border: "1px solid rgba(74, 85, 104, 0.3)",
         borderRadius: "4px",
         fontFamily: "'VT323', 'Silkscreen', monospace"
       }}
     >
-      <div className="text-base font-bold tracking-wider">Temperature: {weatherData.temp.toFixed(1)}°C</div>
-      
-
+      <div className="text-lg font-bold tracking-wider mb-2">Weather Averages</div>
+      <div className="text-base tracking-wider">Temperature: {typeof weatherData.temp === 'number' ? weatherData.temp.toFixed(1) : weatherData.temp}°C</div>
+      <div className="text-base tracking-wider">Humidity: {typeof weatherData.humidity === 'number' ? weatherData.humidity.toFixed(1) : weatherData.humidity}%</div>
+      <div className="text-base tracking-wider">Precipitation: {typeof weatherData.precipitation === 'number' ? weatherData.precipitation.toFixed(1) : weatherData.precipitation} mm</div>
+      <div className="text-base tracking-wider">Cloud Coverage: {typeof weatherData.cloud === 'number' ? weatherData.cloud.toFixed(1) : weatherData.cloud}%</div>
+      <div className="text-base tracking-wider">Wind Speed: {typeof weatherData.wind120m === 'number' ? weatherData.wind120m.toFixed(1) : weatherData.wind120m} m/s</div>
     </div>
     
     <div 
